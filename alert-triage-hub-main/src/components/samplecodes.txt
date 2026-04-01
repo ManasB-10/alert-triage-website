@@ -1,0 +1,11 @@
+@app.route('/api/manual-alert', methods=['POST'])
+def create_manual_alert():
+    data = request.json
+    manager_id = data.get('manager_id') # From session/token
+    
+    # SQL query to insert manual alert
+    query = """
+    INSERT INTO alerts (source_ip, event_type, severity, asset_name, created_by, entry_method)
+    VALUES (%s, %s, %s, %s, %s, 'Manual')
+    """
+    # ... logic to execute SQL and return response
