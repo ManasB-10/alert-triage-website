@@ -199,6 +199,179 @@ def reset_password():
         cursor.close()
         conn.close()
 
+# ──────────────────────────────────────────
+# MANAGER ENDPOINTS
+# ──────────────────────────────────────────
+
+# M-1: Dashboard stats overview
+@app.route('/api/manager/stats', methods=['GET'])
+def manager_stats():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT status, COUNT(*) as count FROM alerts GROUP BY status")
+        status_counts = {row['status']: row['count'] for row in cursor.fetchall()}
+
+        cursor.execute("SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity")
+        severity_counts = {row['severity']: row['count'] for row in cursor.fetchall()}
+
+        cursor.execute("SELECT COUNT(*) as total FROM alerts")
+        total = cursor.fetchone()['total']
+
+        cursor.execute("SELECT COUNT(*) as total FROM users WHERE role = 'Junior_Analyst' AND account_status = 'Active'")
+        analysts = cursor.fetchone()['total']
+
+        return jsonify({
+            'status_counts': status_counts,
+            'severity_counts': severity_counts,
+            'total_alerts': total,
+            'active_analysts': analysts
+        }), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-2: Analyst workload (who is assigned to which alert)
+@app.route('/api/manager/analyst-workload', methods=['GET'])
+def analyst_workload():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT u.user_id, u.username, u.full_name,
+                   a.id as alert_id, a.event_type, a.severity, a.status,
+                   a.created_at
+            FROM users u
+            LEFT JOIN alerts a ON u.user_id = a.assigned_analyst_id
+            WHERE u.role = 'Junior_Analyst'
+            ORDER BY u.user_id, a.created_at DESC
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        # Convert datetime objects to strings for JSON
+        for row in rows:
+            if row.get('created_at'):
+                row['created_at'] = str(row['created_at'])
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-3: Analyst performance metrics
+@app.route('/api/manager/analyst-performance', methods=['GET'])
+def analyst_performance():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT u.user_id, u.username, u.full_name,
+                   COUNT(a.id) as total_handled,
+                   COUNT(CASE WHEN a.status IN ('claimed', 'investigating') THEN 1 END) as in_progress,
+                   COUNT(CASE WHEN a.status = 'closed' THEN 1 END) as completed
+            FROM users u
+            LEFT JOIN alerts a ON u.user_id = a.assigned_analyst_id
+            WHERE u.role = 'Junior_Analyst'
+            GROUP BY u.user_id, u.username, u.full_name
+        """
+        cursor.execute(query)
+        return jsonify(cursor.fetchall()), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-4: Get all Junior Analysts
+@app.route('/api/manager/analysts', methods=['GET'])
+def get_analysts():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT user_id, username, full_name, email, account_status, created_at
+            FROM users WHERE role = 'Junior_Analyst'
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        for row in rows:
+            if row.get('created_at'):
+                row['created_at'] = str(row['created_at'])
+            if row.get('last_login'):
+                row['last_login'] = str(row['last_login'])
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-5: Delete a Junior Analyst
+@app.route('/api/manager/analysts/<int:user_id>', methods=['DELETE'])
+def delete_analyst(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM users WHERE user_id = %s AND role = 'Junior_Analyst'",
+            (user_id,)
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'message': 'Analyst not found or not a Junior Analyst'}), 404
+        return jsonify({'message': 'Analyst removed successfully'}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-6: Manager creates an alert manually
+@app.route('/api/manager/create-alert', methods=['POST'])
+def create_alert():
+    data = request.json
+    event_type = data.get('event_type')
+    source_ip = data.get('source_ip')
+    severity = data.get('severity', 'medium')
+    asset_id = data.get('asset_id')
+    created_by = data.get('created_by')
+
+    if not all([event_type, source_ip, severity]):
+        return jsonify({'message': 'event_type, source_ip and severity are required'}), 400
+
+    valid_severities = ['critical', 'high', 'medium', 'low', 'info']
+    if severity not in valid_severities:
+        return jsonify({'message': f'severity must be one of {valid_severities}'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            INSERT INTO alerts (source_ip, event_type, severity, asset_id, status, created_by, entry_method)
+            VALUES (%s, %s, %s, %s, 'new', %s, 'Manual')
+        """
+        cursor.execute(query, (
+            source_ip, event_type, severity,
+            int(asset_id) if asset_id else None,
+            int(created_by) if created_by else None
+        ))
+        conn.commit()
+        return jsonify({'message': 'Alert created successfully', 'alert_id': cursor.lastrowid}), 201
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 if __name__ == '__main__':
     # Runs the server on port 5000
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000)

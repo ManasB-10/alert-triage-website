@@ -250,7 +250,7 @@ const Login = () => {
         avatar: data.user.name.substring(0, 2).toUpperCase(),
       });
 
-      navigate('/dashboard');
+      navigate(data.user.role === 'soc_manager' ? '/manager' : '/dashboard');
 
     } catch (error: any) {
       toast.error(error.message);

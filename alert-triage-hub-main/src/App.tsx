@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AlertProvider } from "@/context/AlertContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import ManagerDashboard from "./pages/ManagerDashboard";
 import Alerts from "./pages/Alerts";
 import CriticalAlerts from "./pages/CriticalAlerts";
 import NotFound from "./pages/NotFound";
@@ -30,6 +31,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Login />} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/manager" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
               <Route path="/critical" element={<ProtectedRoute><CriticalAlerts /></ProtectedRoute>} />
               <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
