@@ -30,7 +30,7 @@ CREATE TABLE alerts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     source_ip VARCHAR(45) NOT NULL,
     event_type VARCHAR(100) NOT NULL,
-    severity ENUM('critical', 'high', 'medium', 'low', 'info') DEFAULT 'medium',
+    severity ENUM('critical', 'high', 'medium', 'low') DEFAULT 'medium',
     asset_id INT, -- Linked to assets table
     status ENUM('new', 'claimed', 'investigating', 'closed') DEFAULT 'new',
     assigned_analyst_id INT DEFAULT NULL, -- Linked to users table
@@ -110,3 +110,5 @@ FROM users u
 LEFT JOIN alerts a ON u.user_id = a.assigned_analyst_id
 WHERE u.role = 'Junior_Analyst'
 GROUP BY u.user_id, u.username;
+select * from users;
+select * from alerts;

@@ -19,20 +19,42 @@ def get_db_connection():
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
     status_filter = request.args.get('status')
+    severity_filter = request.args.get('severity')
+    status_in = request.args.get('status_in')
+    
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    if status_filter:
-        # Filters data for the specific card clicked (New, Claimed, etc.)
-        query = "SELECT * FROM alerts WHERE status = %s ORDER BY id DESC"
-        cursor.execute(query, (status_filter,))
-    else:
-        query = "SELECT * FROM alerts ORDER BY id DESC"
-        cursor.execute(query)
+    query = "SELECT * FROM alerts"
+    conditions = []
+    params = []
 
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    if severity_filter:
+        conditions.append("severity = %s")
+        params.append(severity_filter)
+    if status_in:
+        statuses = status_in.split(',')
+        placeholders = ', '.join(['%s'] * len(statuses))
+        conditions.append(f"status IN ({placeholders})")
+        params.extend(statuses)
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    query += " ORDER BY id DESC"
+    
+    cursor.execute(query, tuple(params))
     alerts = cursor.fetchall()
     cursor.close()
     conn.close()
+    
+    for alert in alerts:
+        if alert.get('created_at'):
+            alert['created_at'] = str(alert['created_at'])
+            
     return jsonify(alerts)
 
 # 3. Route for the CLAIM BUTTON functionality
@@ -313,7 +335,41 @@ def get_analysts():
         conn.close()
 
 
-# M-5: Delete a Junior Analyst
+# M-5: Manager creates a Junior Analyst account
+@app.route('/api/manager/create-analyst', methods=['POST'])
+def create_analyst():
+    data = request.json
+    username  = data.get('username')
+    full_name = data.get('full_name')
+    email     = data.get('email')
+    password  = data.get('password')
+
+    if not all([username, full_name, email, password]):
+        return jsonify({"message": "All fields are required"}), 400
+
+    password_hash = generate_password_hash(password)
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM users WHERE email = %s OR username = %s", (email, username))
+        if cursor.fetchone():
+            return jsonify({"message": "A user with this email or username already exists"}), 409
+
+        cursor.execute(
+            "INSERT INTO users (username, full_name, email, password_hash, role) VALUES (%s, %s, %s, %s, 'Junior_Analyst')",
+            (username, full_name, email, password_hash)
+        )
+        conn.commit()
+        return jsonify({"message": "Analyst created successfully", "user_id": cursor.lastrowid}), 201
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-6: Delete a Junior Analyst
 @app.route('/api/manager/analysts/<int:user_id>', methods=['DELETE'])
 def delete_analyst(user_id):
     conn = get_db_connection()
@@ -347,7 +403,7 @@ def create_alert():
     if not all([event_type, source_ip, severity]):
         return jsonify({'message': 'event_type, source_ip and severity are required'}), 400
 
-    valid_severities = ['critical', 'high', 'medium', 'low', 'info']
+    valid_severities = ['critical', 'high', 'medium', 'low']
     if severity not in valid_severities:
         return jsonify({'message': f'severity must be one of {valid_severities}'}), 400
 
@@ -371,6 +427,22 @@ def create_alert():
         cursor.close()
         conn.close()
 
+# M-7: Manager deletes an alert
+@app.route('/api/manager/alerts/<int:alert_id>', methods=['DELETE'])
+def delete_alert(alert_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'message': 'Alert not found'}), 404
+        return jsonify({'message': 'Alert deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == '__main__':
     # Runs the server on port 5000

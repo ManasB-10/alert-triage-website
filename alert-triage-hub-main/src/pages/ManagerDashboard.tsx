@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   Activity, Users, AlertTriangle, BarChart2, FilePlus, Shield,
-  User, Loader2, RefreshCw, ShieldAlert, TrendingUp, Trash2, Plus,
+  User, Loader2, RefreshCw, ShieldAlert, TrendingUp, Trash2, Plus, UserPlus, X, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import SeverityBadge from '@/components/SeverityBadge';
@@ -21,7 +21,6 @@ const SEVERITY_COLORS: Record<string, string> = {
   high: '#e87f35',
   medium: '#e8a735',
   low: '#38bdf8',
-  info: '#6b7280',
 };
 const STATUS_COLORS: Record<string, string> = {
   new: '#e84057',
@@ -96,6 +95,62 @@ const ManagerDashboard: React.FC = () => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
+  // Add Analyst modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [addingAnalyst, setAddingAnalyst] = useState(false);
+  const [analystForm, setAnalystForm] = useState({
+    username: '',
+    full_name: '',
+    email: '',
+    password: '',
+  });
+  const [analystFormErrors, setAnalystFormErrors] = useState<Record<string, string>>({});
+
+  // Data Modal State (for Stats Cards)
+  const [activeModalCard, setActiveModalCard] = useState<'total' | 'critical' | 'open' | 'analysts' | null>(null);
+  const [modalAlerts, setModalAlerts] = useState<any[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [confirmDeleteModalAlertId, setConfirmDeleteModalAlertId] = useState<number | null>(null);
+  const [deletingModalAlertId, setDeletingModalAlertId] = useState<number | null>(null);
+
+  const handleDeleteModalAlert = async (alertId: number) => {
+    setDeletingModalAlertId(alertId);
+    try {
+      const res = await fetch(`${API}/api/manager/alerts/${alertId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      toast.success('Alert deleted successfully');
+      setModalAlerts(prev => prev.filter(a => a.id !== alertId));
+      fetchAll();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete alert');
+    } finally {
+      setDeletingModalAlertId(null);
+      setConfirmDeleteModalAlertId(null);
+    }
+  };
+
+  const handleCardClick = async (cardId: 'total' | 'critical' | 'open' | 'analysts') => {
+    setActiveModalCard(cardId);
+    if (cardId === 'analysts') return;
+    
+    setModalLoading(true);
+    try {
+      let query = '';
+      if (cardId === 'critical') query = '?severity=critical';
+      else if (cardId === 'open') query = '?status_in=new,claimed,investigating';
+      
+      const res = await fetch(`${API}/api/alerts${query}`);
+      const data = await res.json();
+      setModalAlerts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error('Failed to load card data');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
   // ── Fetch all data ─────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -165,14 +220,92 @@ const ManagerDashboard: React.FC = () => {
     }
   };
 
+  // ── Validate Analyst Form (same rules as signup) ───────────────
+  const validateAnalystForm = () => {
+    const errors: Record<string, string> = {};
+    const valName     = analystForm.full_name.trim();
+    const valUsername = analystForm.username.trim();
+    const valEmail    = analystForm.email.trim();
+    const valPassword = analystForm.password;
+
+    // Full Name
+    const nameRegex = /^[a-zA-Z]+(?:\s+[a-zA-Z]+)+$/;
+    if (valName.length < 2 || valName.length > 50) {
+      errors.full_name = 'Length must be 2–50 characters';
+    } else if (!nameRegex.test(valName)) {
+      errors.full_name = 'Provide first and surname (alphabets and space only)';
+    }
+
+    // Username
+    if (valUsername.length < 3 || valUsername.length > 16) {
+      errors.username = 'Length must be 3–16 characters';
+    } else if (!/(?=.*[a-zA-Z])(?=.*\d)/.test(valUsername)) {
+      errors.username = 'Must contain both alphabets and numbers';
+    } else if (!/^[a-zA-Z0-9_.]+$/.test(valUsername)) {
+      errors.username = 'Only alphanumeric, underscores, and periods allowed';
+    } else if (/^[_. ]|[_. ]$/.test(valUsername)) {
+      errors.username = 'Cannot start or end with a special character';
+    } else if (/[_.]{2,}/.test(valUsername)) {
+      errors.username = 'Cannot have consecutive special characters';
+    }
+
+    // Email
+    if (valEmail.length === 0 || valEmail.length > 254) {
+      errors.email = 'Email must be 1–254 characters';
+    } else if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(valEmail)) {
+      errors.email = 'Please enter a properly formatted email';
+    }
+
+    // Password
+    if (valPassword.length < 6) {
+      errors.password = 'Weak password: Minimum 6 characters required';
+    } else if (!/[a-zA-Z]/.test(valPassword) || !/\d/.test(valPassword) || !/[^a-zA-Z0-9]/.test(valPassword)) {
+      errors.password = 'Need alphabets, numbers, and a special character';
+    }
+
+    setAnalystFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const clearAnalystError = (field: string) => {
+    if (analystFormErrors[field]) {
+      setAnalystFormErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // ── Create Analyst ─────────────────────────────────────────────
+  const handleCreateAnalyst = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateAnalystForm()) return;
+    setAddingAnalyst(true);
+    try {
+      const res = await fetch(`${API}/api/manager/create-analyst`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...analystForm, role: 'junior_analyst' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      toast.success(`✅ Analyst "${analystForm.full_name}" created successfully`);
+      setAnalystForm({ username: '', full_name: '', email: '', password: '' });
+      setShowAddModal(false);
+      fetchAll();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to create analyst');
+    } finally {
+      setAddingAnalyst(false);
+    }
+  };
+
   // ── Chart data ─────────────────────────────────────────────────
   const statusChartData = stats
     ? Object.entries(stats.status_counts).map(([name, value]) => ({ name, value }))
     : [];
+  const severityOrder = ['critical', 'high', 'medium', 'low'];
   const severityChartData = stats
     ? Object.entries(stats.severity_counts)
-        .filter(([name]) => name !== 'info')
         .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => severityOrder.indexOf(a.name) - severityOrder.indexOf(b.name))
     : [];
   const perfChartData = performance.map(p => ({
     name: p.username,
@@ -237,12 +370,16 @@ const ManagerDashboard: React.FC = () => {
         {/* ── Stats Row ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Alerts',    value: stats?.total_alerts    ?? '—', icon: AlertTriangle, color: 'text-primary',     bg: 'bg-primary/10',     border: 'border-primary/20'     },
-            { label: 'Critical',        value: stats?.severity_counts?.critical ?? '—', icon: ShieldAlert, color: 'text-destructive', bg: 'bg-destructive/10', border: 'border-destructive/20' },
-            { label: 'Open',            value: openCount || '—',              icon: Activity,      color: 'text-accent',      bg: 'bg-accent/10',      border: 'border-accent/20'      },
-            { label: 'Active Analysts', value: stats?.active_analysts  ?? '—', icon: Users,         color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/20'   },
+            { id: 'total', label: 'Total Alerts',    value: stats?.total_alerts    ?? '—', icon: AlertTriangle, color: 'text-primary',     bg: 'bg-primary/10',     border: 'border-primary/20'     },
+            { id: 'critical', label: 'Critical',        value: stats?.severity_counts?.critical ?? '—', icon: ShieldAlert, color: 'text-destructive', bg: 'bg-destructive/10', border: 'border-destructive/20' },
+            { id: 'open', label: 'Open',            value: openCount || '—',              icon: Activity,      color: 'text-accent',      bg: 'bg-accent/10',      border: 'border-accent/20'      },
+            { id: 'analysts', label: 'Active Analysts', value: stats?.active_analysts  ?? '—', icon: Users,         color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/20'   },
           ].map(card => (
-            <div key={card.label} className={`rounded-lg border ${card.border} ${card.bg} p-4 flex items-center gap-4`}>
+            <div 
+              key={card.label} 
+              onClick={() => handleCardClick(card.id as any)}
+              className={`rounded-lg border ${card.border} ${card.bg} p-4 flex items-center gap-4 cursor-pointer hover:scale-[1.02] transition-transform shadow-sm`}
+            >
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${card.bg} border ${card.border} shrink-0`}>
                 <card.icon className={`w-5 h-5 ${card.color}`} />
               </div>
@@ -555,8 +692,8 @@ const ManagerDashboard: React.FC = () => {
                 {/* Severity Picker */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-foreground">Severity</label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {(['critical', 'high', 'medium', 'low', 'info'] as const).map(sev => (
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
                       <button
                         key={sev}
                         type="button"
@@ -606,9 +743,13 @@ const ManagerDashboard: React.FC = () => {
                   {analysts.length} analyst{analysts.length !== 1 ? 's' : ''} registered
                 </p>
               </div>
-              <p className="text-xs text-muted-foreground font-mono bg-secondary/50 border border-border px-3 py-1.5 rounded-lg">
-                To add an analyst → use Sign Up on the Login page
-              </p>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 text-sm font-semibold bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 hover:border-accent/60 px-4 py-2 rounded-lg transition-all"
+              >
+                <UserPlus className="w-4 h-4" />
+                Add Analyst
+              </button>
             </div>
 
             <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -692,6 +833,270 @@ const ManagerDashboard: React.FC = () => {
         )}
 
       </div>
+
+      {/* ══ Stats Card Data Modal ══ */}
+      {activeModalCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-4xl max-h-[80vh] flex flex-col rounded-xl border border-accent/30 bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center">
+                  {activeModalCard === 'analysts' ? <Users className="w-4 h-4 text-blue-400" /> : <Activity className="w-4 h-4 text-accent" />}
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground">
+                    {activeModalCard === 'total' && 'All Alerts'}
+                    {activeModalCard === 'critical' && 'Critical Alerts'}
+                    {activeModalCard === 'open' && 'Open Alerts'}
+                    {activeModalCard === 'analysts' && 'Active Analysts'}
+                  </h2>
+                  <p className="text-xs text-muted-foreground font-mono">Detailed view</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModalCard(null)}
+                className="p-2 -mr-2 text-muted-foreground hover:bg-secondary hover:text-foreground rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 overflow-y-auto">
+              {activeModalCard === 'analysts' ? (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-secondary/20">
+                      <tr>
+                        {['Analyst', 'Email', 'Joined'].map(h => (
+                          <th key={h} className="text-left py-3 px-4 text-xs font-mono text-muted-foreground uppercase">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysts.filter(a => a.account_status === 'Active').map(analyst => (
+                        <tr key={analyst.user_id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                                {analyst.full_name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-medium text-foreground">{analyst.full_name}</p>
+                                <p className="text-xs text-muted-foreground font-mono">@{analyst.username}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-xs text-muted-foreground font-mono">{analyst.email}</td>
+                          <td className="py-3 px-4 text-xs text-muted-foreground font-mono">
+                            {new Date(analyst.created_at).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {analysts.filter(a => a.account_status === 'Active').length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="text-center py-10 text-xs text-muted-foreground font-mono">
+                            No active analysts.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                modalLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-6 h-6 animate-spin text-accent" />
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-border bg-secondary/20">
+                        <tr>
+                          {['ID', 'Event', 'Severity', 'Status', 'Date', 'Action'].map(h => (
+                            <th key={h} className="text-left py-3 px-4 text-xs font-mono text-muted-foreground uppercase last:text-center">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalAlerts.map(alert => (
+                          <tr key={alert.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
+                            <td className="py-3 px-4 font-mono text-xs text-muted-foreground">ALT-{String(alert.id).padStart(3, '0')}</td>
+                            <td className="py-3 px-4 text-sm font-medium text-foreground">{alert.event_type}</td>
+                            <td className="py-3 px-4"><SeverityBadge severity={alert.severity} /></td>
+                            <td className="py-3 px-4"><StatusBadge status={alert.status} /></td>
+                            <td className="py-3 px-4 text-xs text-muted-foreground font-mono">
+                              {alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {confirmDeleteModalAlertId === alert.id ? (
+                                <div className="flex items-center gap-2 justify-center">
+                                  <span className="text-xs text-muted-foreground font-mono">Sure?</span>
+                                  <button
+                                    onClick={() => handleDeleteModalAlert(alert.id)}
+                                    disabled={deletingModalAlertId === alert.id}
+                                    className="text-xs text-destructive border border-destructive/30 hover:bg-destructive/10 rounded px-2 py-1 transition-all disabled:opacity-50"
+                                  >
+                                    {deletingModalAlertId === alert.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes'}
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteModalAlertId(null)}
+                                    className="text-xs text-muted-foreground border border-border hover:bg-secondary rounded px-2 py-1 transition-all"
+                                  >
+                                    No
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteModalAlertId(alert.id)}
+                                  className="mx-auto text-xs text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/30 rounded px-2 py-1 transition-all flex items-center justify-center p-1"
+                                  title="Delete Alert"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {modalAlerts.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="text-center py-10 text-xs text-muted-foreground font-mono">
+                              No alerts found for this category.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Add Analyst Modal ══ */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-md rounded-xl border border-accent/30 bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center">
+                  <UserPlus className="w-4 h-4 text-accent" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">Create Junior Analyst</h2>
+                  <p className="text-xs text-muted-foreground font-mono">New account will be Active immediately</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowAddModal(false); setAnalystForm({ username: '', full_name: '', email: '', password: '' }); setAnalystFormErrors({}); }}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleCreateAnalyst} className="p-5 space-y-4">
+
+              {/* Full Name */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Full Name <span className="text-destructive">*</span></label>
+                <input
+                  type="text"
+                  value={analystForm.full_name}
+                  onChange={e => { setAnalystForm(f => ({ ...f, full_name: e.target.value })); clearAnalystError('full_name'); }}
+                  className={`w-full bg-background border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 placeholder:text-muted-foreground/40 transition-all ${
+                    analystFormErrors.full_name ? 'border-destructive focus:ring-destructive/50' : 'border-border focus:ring-accent/50'
+                  }`}
+                  placeholder="e.g. Arjun Sharma"
+                  autoFocus
+                />
+                {analystFormErrors.full_name && <p className="text-xs text-destructive animate-fade-in">{analystFormErrors.full_name}</p>}
+              </div>
+
+              {/* Username */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Username <span className="text-destructive">*</span></label>
+                <input
+                  type="text"
+                  value={analystForm.username}
+                  onChange={e => { setAnalystForm(f => ({ ...f, username: e.target.value })); clearAnalystError('username'); }}
+                  className={`w-full bg-background border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 placeholder:text-muted-foreground/40 transition-all font-mono ${
+                    analystFormErrors.username ? 'border-destructive focus:ring-destructive/50' : 'border-border focus:ring-accent/50'
+                  }`}
+                  placeholder="e.g. arjun01"
+                />
+                {analystFormErrors.username && <p className="text-xs text-destructive animate-fade-in">{analystFormErrors.username}</p>}
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email <span className="text-destructive">*</span></label>
+                <input
+                  type="email"
+                  value={analystForm.email}
+                  onChange={e => { setAnalystForm(f => ({ ...f, email: e.target.value })); clearAnalystError('email'); }}
+                  className={`w-full bg-background border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 placeholder:text-muted-foreground/40 transition-all ${
+                    analystFormErrors.email ? 'border-destructive focus:ring-destructive/50' : 'border-border focus:ring-accent/50'
+                  }`}
+                  placeholder="e.g. arjun@company.com"
+                />
+                {analystFormErrors.email && <p className="text-xs text-destructive animate-fade-in">{analystFormErrors.email}</p>}
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Temporary Password <span className="text-destructive">*</span></label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={analystForm.password}
+                    onChange={e => { setAnalystForm(f => ({ ...f, password: e.target.value })); clearAnalystError('password'); }}
+                    className={`w-full bg-background border rounded-lg px-3 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 placeholder:text-muted-foreground/40 transition-all font-mono ${
+                      analystFormErrors.password ? 'border-destructive focus:ring-destructive/50' : 'border-border focus:ring-accent/50'
+                    }`}
+                    placeholder="e.g. Arjun@123"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(p => !p)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {analystFormErrors.password && <p className="text-xs text-destructive animate-fade-in">{analystFormErrors.password}</p>}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddModal(false); setAnalystForm({ username: '', full_name: '', email: '', password: '' }); setAnalystFormErrors({}); }}
+                  className="flex-1 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingAnalyst}
+                  className="flex-1 py-2.5 rounded-lg bg-accent hover:bg-accent/90 text-black font-semibold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {addingAnalyst ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  {addingAnalyst ? 'Creating...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };

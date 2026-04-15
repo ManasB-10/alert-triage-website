@@ -10,4 +10,4 @@ INSERT INTO alerts (source_ip, event_type, severity, status) VALUES
 ('10.0.0.80', 'CVE-2026-1234 Vulnerability Found', 'critical', 'new'),
 ('10.0.3.44', 'Unusual Data Exfiltration', 'high', 'new'),
 ('10.0.1.33', 'Failed Login Anomaly', 'medium', 'claimed'),
-('10.0.0.90', 'SSL Certificate Expiring', 'info', 'new');
+('10.0.0.90', 'SSL Certificate Expiring', 'low', 'new');

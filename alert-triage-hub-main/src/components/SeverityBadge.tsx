@@ -5,7 +5,7 @@ const config: Record<Severity, { label: string; className: string }> = {
   high: { label: 'HIGH', className: 'bg-severity-high/15 text-severity-high border-severity-high/30' },
   medium: { label: 'MEDIUM', className: 'bg-severity-medium/15 text-severity-medium border-severity-medium/30' },
   low: { label: 'LOW', className: 'bg-severity-low/15 text-severity-low border-severity-low/30' },
-  info: { label: 'INFO', className: 'bg-severity-info/15 text-severity-info border-severity-info/30' },
+
 };
 
 const SeverityBadge = ({ severity }: { severity: Severity }) => {

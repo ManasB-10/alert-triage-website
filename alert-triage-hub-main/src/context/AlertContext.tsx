@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type AlertStatus = 'new' | 'claimed' | 'investigating' | 'closed';
 export type AlertSource = 'Vulnerability Scanner' | 'IDS/IPS' | 'SIEM' | 'EDR' | 'Firewall' | 'Email Gateway' | 'WAF';
 
@@ -72,7 +72,7 @@ const MOCK_ALERTS: SecurityAlert[] = [
   },
   {
     id: 'ALT-010', title: 'SSL Certificate Expiring', description: 'SSL certificate for portal.company.com expires in 7 days.',
-    severity: 'info', status: 'new', source: 'Vulnerability Scanner', sourceIp: 'N/A', destIp: '10.0.0.90', timestamp: '2026-03-09T00:00:00Z', notes: [],
+    severity: 'low', status: 'new', source: 'Vulnerability Scanner', sourceIp: 'N/A', destIp: '10.0.0.90', timestamp: '2026-03-09T00:00:00Z', notes: [],
   },
 ];
 
@@ -103,7 +103,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         rawId: d.id,
         title: d.event_type || 'Unknown Event',
         description: 'Auto-generated alert via Sentinel Hub.',
-        severity: d.severity || 'info',
+        severity: d.severity || 'low',
         status: d.status || 'new',
         source: getSource(d.event_type || ''),
         sourceIp: d.source_ip || '0.0.0.0',
