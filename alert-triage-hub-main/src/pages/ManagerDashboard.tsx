@@ -87,8 +87,14 @@ const ManagerDashboard: React.FC = () => {
   const [createForm, setCreateForm] = useState({
     event_type: '',
     source_ip: '',
+    dest_ip: '',
+    description: '',
+    trigger_time: '',
+    tags: '',
+    detection_source: 'EDR',
     severity: 'medium',
   });
+  const [isCurrentTime, setIsCurrentTime] = useState(false);
   const [creating, setCreating] = useState(false);
 
   // Delete state
@@ -180,21 +186,47 @@ const ManagerDashboard: React.FC = () => {
   // ── Create Alert ───────────────────────────────────────────────
   const handleCreateAlert = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createForm.event_type.trim() || !createForm.source_ip.trim()) {
-      toast.error('Event Type and Source IP are required');
+    if (
+      !createForm.event_type.trim() || 
+      !createForm.source_ip.trim() || 
+      !createForm.dest_ip.trim() || 
+      !createForm.description.trim() || 
+      !createForm.tags.trim() || 
+      (!createForm.trigger_time && !isCurrentTime)
+    ) {
+      toast.error('All fields are mandatory to create an alert');
       return;
     }
+
+    const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$/;
+    if (!ipPattern.test(createForm.source_ip.trim())) {
+      toast.error('Invalid Source IP format');
+      return;
+    }
+    if (!ipPattern.test(createForm.dest_ip.trim())) {
+      toast.error('Invalid Destination IP format');
+      return;
+    }
+
+    if (createForm.description.trim() && createForm.description.trim().split(/\s+/).length > 200) {
+      toast.error('Description must be 200 words or less');
+      return;
+    }
+
     setCreating(true);
     try {
+      const payloadTime = isCurrentTime ? new Date().toISOString() : createForm.trigger_time;
+
       const res = await fetch(`${API}/api/manager/create-alert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...createForm, created_by: user?.id }),
+        body: JSON.stringify({ ...createForm, trigger_time: payloadTime, created_by: user?.id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       toast.success(`✅ Alert #${data.alert_id} created successfully`);
-      setCreateForm({ event_type: '', source_ip: '', severity: 'medium' });
+      setCreateForm({ event_type: '', source_ip: '', dest_ip: '', description: '', trigger_time: '', tags: '', detection_source: 'EDR', severity: 'medium' });
+      setIsCurrentTime(false);
       fetchAll();
     } catch (e: any) {
       toast.error(e.message || 'Failed to create alert');
@@ -647,7 +679,7 @@ const ManagerDashboard: React.FC = () => {
 
         {/* ══════════════════ Tab: CREATE ALERT ══════════════════ */}
         {activeTab === 'create' && (
-          <div className="animate-in fade-in duration-300 max-w-lg">
+          <div className="animate-in fade-in duration-300 w-full max-w-5xl">
             <div className="rounded-lg border border-accent/20 bg-card p-6 shadow-xl">
               {/* Form header */}
               <div className="flex items-center gap-3 mb-6">
@@ -660,32 +692,131 @@ const ManagerDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <form onSubmit={handleCreateAlert} className="space-y-5">
-                {/* Event Type */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">
-                    Event Type <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.event_type}
-                    onChange={e => setCreateForm(f => ({ ...f, event_type: e.target.value }))}
-                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
-                    placeholder="e.g. SQL Injection Attempt"
-                  />
+              <form onSubmit={handleCreateAlert} className="space-y-6">
+                
+                {/* Top Section: Grid for shorter inputs */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  
+                  {/* Event Type */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Event Type <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.event_type}
+                      onChange={e => setCreateForm(f => ({ ...f, event_type: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
+                      placeholder="e.g. SQL Injection Attempt"
+                    />
+                  </div>
+
+                  {/* Source IP */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Source IP <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.source_ip}
+                      onChange={e => setCreateForm(f => ({ ...f, source_ip: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
+                      placeholder="e.g. 192.168.1.100"
+                    />
+                  </div>
+
+                  {/* Dest IP */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Dest IP <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.dest_ip}
+                      onChange={e => setCreateForm(f => ({ ...f, dest_ip: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
+                      placeholder="e.g. 10.0.0.50"
+                    />
+                  </div>
+
+                  {/* Detection Source */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Detection Source <span className="text-destructive">*</span>
+                    </label>
+                    <select
+                      value={createForm.detection_source}
+                      onChange={e => setCreateForm(f => ({ ...f, detection_source: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all"
+                    >
+                      <option value="EDR">EDR</option>
+                      <option value="SIEM">SIEM</option>
+                      <option value="Firewall">Firewall</option>
+                      <option value="IDS/IPS">IDS/IPS</option>
+                      <option value="Email Gateway">Email Gateway</option>
+                      <option value="WAF">WAF</option>
+                      <option value="Vulnerability Scanner">Vulnerability Scanner</option>
+                      <option value="Unknown">Other / Unknown</option>
+                    </select>
+                  </div>
+
+                  {/* Tags */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Tags <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.tags}
+                      onChange={e => setCreateForm(f => ({ ...f, tags: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
+                      placeholder="e.g. Phishing, Malware"
+                    />
+                  </div>
+
+                  {/* Trigger Time */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm font-medium text-foreground">
+                        Trigger Date & Time <span className="text-destructive">*</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                        <input 
+                          type="checkbox" 
+                          checked={isCurrentTime} 
+                          onChange={e => setIsCurrentTime(e.target.checked)}
+                          className="accent-accent"
+                        />
+                        Just Now
+                      </label>
+                    </div>
+                    <input
+                      type="datetime-local"
+                      value={createForm.trigger_time}
+                      onChange={e => setCreateForm(f => ({ ...f, trigger_time: e.target.value }))}
+                      disabled={isCurrentTime}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
                 </div>
 
-                {/* Source IP */}
+                {/* Bottom Section: Full Width */}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">
-                    Source IP <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.source_ip}
-                    onChange={e => setCreateForm(f => ({ ...f, source_ip: e.target.value }))}
-                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50"
-                    placeholder="e.g. 192.168.1.100"
+                  <div className="flex justify-between">
+                    <label className="text-sm font-medium text-foreground">
+                      Description <span className="text-destructive">*</span>
+                    </label>
+                    <span className={`text-xs font-mono ${createForm.description.trim().split(/\s+/).length > 200 ? 'text-destructive font-bold' : 'text-muted-foreground'}`}>
+                      {createForm.description.trim() === '' ? 0 : createForm.description.trim().split(/\s+/).length} / 200 words
+                    </span>
+                  </div>
+                  <textarea
+                    value={createForm.description}
+                    onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
+                    rows={3}
+                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 text-sm transition-all placeholder:text-muted-foreground/50 resize-y"
+                    placeholder="Provide incident context..."
                   />
                 </div>
 
@@ -913,8 +1044,8 @@ const ManagerDashboard: React.FC = () => {
                   <div className="border border-border rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="border-b border-border bg-secondary/20">
-                        <tr>
-                          {['ID', 'Event', 'Severity', 'Status', 'Date', 'Action'].map(h => (
+                         <tr>
+                          {['ID', 'Event', 'Severity', 'Status', 'Source', 'Tags', 'Date', 'Action'].map(h => (
                             <th key={h} className="text-left py-3 px-4 text-xs font-mono text-muted-foreground uppercase last:text-center">
                               {h}
                             </th>
@@ -923,13 +1054,26 @@ const ManagerDashboard: React.FC = () => {
                       </thead>
                       <tbody>
                         {modalAlerts.map(alert => (
-                          <tr key={alert.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
-                            <td className="py-3 px-4 font-mono text-xs text-muted-foreground">ALT-{String(alert.id).padStart(3, '0')}</td>
-                            <td className="py-3 px-4 text-sm font-medium text-foreground">{alert.event_type}</td>
-                            <td className="py-3 px-4"><SeverityBadge severity={alert.severity} /></td>
-                            <td className="py-3 px-4"><StatusBadge status={alert.status} /></td>
-                            <td className="py-3 px-4 text-xs text-muted-foreground font-mono">
-                              {alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—'}
+                          <tr key={alert.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors group">
+                            <td className="py-3 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap">ALT-{String(alert.id).padStart(3, '0')}</td>
+                            <td className="py-3 px-4">
+                              <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{alert.event_type}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{alert.source_ip} → {alert.dest_ip}</p>
+                            </td>
+                            <td className="py-3 px-4 text-xs"><SeverityBadge severity={alert.severity} /></td>
+                            <td className="py-3 px-4 text-xs"><StatusBadge status={alert.status} /></td>
+                            <td className="py-3 px-4 text-[10px] text-muted-foreground font-mono uppercase whitespace-nowrap">{alert.detection_source || '—'}</td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-wrap gap-1 max-w-[120px]">
+                                {alert.tags ? alert.tags.split(',').map(tag => (
+                                  <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-secondary border border-border rounded text-muted-foreground font-mono uppercase">
+                                    {tag.trim()}
+                                  </span>
+                                )) : <span className="text-muted-foreground text-[10px]">—</span>}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+                              {alert.trigger_time ? new Date(alert.trigger_time).toLocaleDateString() : (alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—')}
                             </td>
                             <td className="py-3 px-4 text-center">
                               {confirmDeleteModalAlertId === alert.id ? (
@@ -963,7 +1107,7 @@ const ManagerDashboard: React.FC = () => {
                         ))}
                         {modalAlerts.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="text-center py-10 text-xs text-muted-foreground font-mono">
+                            <td colSpan={8} className="text-center py-10 text-xs text-muted-foreground font-mono">
                               No alerts found for this category.
                             </td>
                           </tr>

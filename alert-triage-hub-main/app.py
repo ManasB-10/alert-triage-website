@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
+import re
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -25,26 +27,34 @@ def get_alerts():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    query = "SELECT * FROM alerts"
+    query = """
+        SELECT a.*, 
+               asst.asset_name, 
+               asst.asset_type, 
+               asst.criticality_score, 
+               asst.location as asset_location
+        FROM alerts a
+        LEFT JOIN assets asst ON a.asset_id = asst.asset_id
+    """
     conditions = []
     params = []
 
     if status_filter:
-        conditions.append("status = %s")
+        conditions.append("a.status = %s")
         params.append(status_filter)
     if severity_filter:
-        conditions.append("severity = %s")
+        conditions.append("a.severity = %s")
         params.append(severity_filter)
     if status_in:
         statuses = status_in.split(',')
         placeholders = ', '.join(['%s'] * len(statuses))
-        conditions.append(f"status IN ({placeholders})")
+        conditions.append(f"a.status IN ({placeholders})")
         params.extend(statuses)
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    query += " ORDER BY id DESC"
+    query += " ORDER BY a.id DESC"
     
     cursor.execute(query, tuple(params))
     alerts = cursor.fetchall()
@@ -391,6 +401,7 @@ def delete_analyst(user_id):
 
 
 # M-6: Manager creates an alert manually
+# M-6: Manager creates an alert manually
 @app.route('/api/manager/create-alert', methods=['POST'])
 def create_alert():
     data = request.json
@@ -399,25 +410,47 @@ def create_alert():
     severity = data.get('severity', 'medium')
     asset_id = data.get('asset_id')
     created_by = data.get('created_by')
+    
+    # New fields
+    dest_ip = data.get('dest_ip')
+    description = data.get('description', '')
+    trigger_time = data.get('trigger_time')
+    tags = data.get('tags', '')
+    detection_source = data.get('detection_source', 'Unknown')
 
-    if not all([event_type, source_ip, severity]):
-        return jsonify({'message': 'event_type, source_ip and severity are required'}), 400
+    if not all([event_type, source_ip, dest_ip, severity, detection_source, description, tags, trigger_time]):
+        return jsonify({'message': 'All fields are strictly required'}), 400
 
     valid_severities = ['critical', 'high', 'medium', 'low']
     if severity not in valid_severities:
         return jsonify({'message': f'severity must be one of {valid_severities}'}), 400
 
+    # IP Validation
+    ip_pattern = re.compile(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$")
+    if not ip_pattern.match(source_ip):
+        return jsonify({'message': 'Invalid Source IP format'}), 400
+    if not ip_pattern.match(dest_ip):
+        return jsonify({'message': 'Invalid Destination IP format'}), 400
+
+    # Description Validation (max 200 words)
+    if len(description.split()) > 200:
+        return jsonify({'message': 'Description exceeds the 200 words limit'}), 400
+
+    if not trigger_time:
+        trigger_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         query = """
-            INSERT INTO alerts (source_ip, event_type, severity, asset_id, status, created_by, entry_method)
-            VALUES (%s, %s, %s, %s, 'new', %s, 'Manual')
+            INSERT INTO alerts (source_ip, dest_ip, event_type, severity, asset_id, status, created_by, entry_method, description, trigger_time, tags, detection_source)
+            VALUES (%s, %s, %s, %s, %s, 'new', %s, 'Manual', %s, %s, %s, %s)
         """
         cursor.execute(query, (
-            source_ip, event_type, severity,
+            source_ip, dest_ip, event_type, severity,
             int(asset_id) if asset_id else None,
-            int(created_by) if created_by else None
+            int(created_by) if created_by else None,
+            description, trigger_time, tags, detection_source
         ))
         conn.commit()
         return jsonify({'message': 'Alert created successfully', 'alert_id': cursor.lastrowid}), 201
@@ -443,6 +476,47 @@ def delete_alert(alert_id):
     finally:
         cursor.close()
         conn.close()
+
+# M-8: Update User Profile
+@app.route('/api/user/update-profile', methods=['POST'])
+def update_profile():
+    data = request.json
+    user_id   = data.get('user_id')
+    full_name = data.get('full_name')
+    email     = data.get('email')
+
+    if not all([user_id, full_name, email]):
+        return jsonify({"message": "Missing required fields"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # 1. Check if email is already taken by ANOTHER user
+        cursor.execute("SELECT * FROM users WHERE email = %s AND user_id != %s", (email, user_id))
+        if cursor.fetchone():
+            return jsonify({"message": "This email is already taken by another account"}), 409
+
+        # 2. Update user
+        cursor.execute(
+            "UPDATE users SET full_name = %s, email = %s WHERE user_id = %s",
+            (full_name, email, user_id)
+        )
+        conn.commit()
+
+        return jsonify({
+            "message": "Profile updated successfully",
+            "user": {
+                "id": str(user_id),
+                "name": full_name,
+                "email": email
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 
 if __name__ == '__main__':
     # Runs the server on port 5000

@@ -4,7 +4,7 @@ import { useAlerts } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from './SeverityBadge';
 import StatusBadge from './StatusBadge';
-import { X, Send, Hand } from 'lucide-react';
+import { X, Send, Hand, ShieldCheck } from 'lucide-react';
 
 interface Props {
   alert: SecurityAlert;
@@ -52,6 +52,7 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
               ['Source IP', alert.sourceIp],
               ['Dest IP', alert.destIp],
               ['Timestamp', new Date(alert.timestamp).toLocaleString()],
+              ['Tags', alert.tags || '—'],
               ['Claimed By', alert.claimedBy || '—'],
               ['Closed At', alert.closedAt ? new Date(alert.closedAt).toLocaleString() : '—'],
             ].map(([label, value]) => (
@@ -61,6 +62,44 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
               </div>
             ))}
           </div>
+
+          {/* Affected Asset Info */}
+          {alert.assetName && (
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  Affected Asset Details
+                </h3>
+                <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  (alert.assetCriticality || 0) >= 8 
+                    ? 'bg-destructive/20 text-destructive border border-destructive/30' 
+                    : 'bg-primary/20 text-primary border border-primary/30'
+                }`}>
+                  Criticality: {alert.assetCriticality}/10
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+                <div>
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Asset Name</p>
+                  <p className="text-sm font-semibold text-foreground mt-0.5">{alert.assetName}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Asset Type</p>
+                  <p className="text-sm font-semibold text-foreground mt-0.5">{alert.assetType}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Location</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">{alert.assetLocation || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Ownership</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">Corporate Infrastructure</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Actions for Junior Analyst */}
           {!isManager && (

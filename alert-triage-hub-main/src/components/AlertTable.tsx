@@ -75,29 +75,41 @@ const AlertTable = () => {
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Severity</th>
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Status</th>
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Source</th>
+                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Tags</th>
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Time</th>
                 <th className="text-right px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((alert) => (
-                <tr key={alert.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
+                <tr 
+                  key={alert.id} 
+                  onClick={() => setSelectedAlert(alert)}
+                  className="border-b border-border/50 hover:bg-secondary/30 transition-colors cursor-pointer group"
+                >
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{alert.id}</td>
                   <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-foreground truncate max-w-[280px]">{alert.title}</p>
+                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{alert.title}</p>
                     <p className="text-xs text-muted-foreground font-mono mt-0.5">{alert.sourceIp} → {alert.destIp}</p>
                   </td>
                   <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
                   <td className="px-4 py-3"><StatusBadge status={alert.status} /></td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{alert.source}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono uppercase">{alert.source}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1 max-w-[120px]">
+                      {alert.tags ? alert.tags.split(',').map(tag => (
+                        <span key={tag} className="text-[9px] px-1.5 py-0.5 bg-secondary border border-border rounded text-muted-foreground font-mono">
+                          {tag.trim()}
+                        </span>
+                      )) : <span className="text-muted-foreground text-[10px]">—</span>}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
                     {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => setSelectedAlert(alert)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors" title="View">
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
+                      {/* View icon removed as requested, row is now clickable */}
 
                       {/* Junior Analyst Actions */}
                       {!isManager && alert.status === 'new' && (
@@ -113,12 +125,12 @@ const AlertTable = () => {
                         </button>
                       )}
                       {!isManager && alert.status === 'claimed' && alert.claimedBy === user?.name && (
-                        <button onClick={() => investigateAlert(alert.id)} className="p-1.5 rounded hover:bg-info/10 text-muted-foreground hover:text-info transition-colors" title="Investigate">
+                        <button onClick={(e) => { e.stopPropagation(); investigateAlert(alert.id); }} className="p-1.5 rounded hover:bg-info/10 text-muted-foreground hover:text-info transition-colors" title="Investigate">
                           <Search className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {!isManager && (alert.status === 'claimed' || alert.status === 'investigating') && alert.claimedBy === user?.name && (
-                        <button onClick={() => closeAlert(alert.id)} className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success transition-colors" title="Close">
+                        <button onClick={(e) => { e.stopPropagation(); closeAlert(alert.id); }} className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success transition-colors" title="Close">
                           <XCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
@@ -126,10 +138,10 @@ const AlertTable = () => {
                       {/* Manager Actions */}
                       {isManager && (
                         <>
-                          <button onClick={() => setEditAlert(alert)} className="p-1.5 rounded hover:bg-accent/10 text-muted-foreground hover:text-accent transition-colors" title="Edit">
+                          <button onClick={(e) => { e.stopPropagation(); setEditAlert(alert); }} className="p-1.5 rounded hover:bg-accent/10 text-muted-foreground hover:text-accent transition-colors" title="Edit">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => deleteAlert(alert.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Delete">
+                          <button onClick={(e) => { e.stopPropagation(); deleteAlert(alert.id); }} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Delete">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </>

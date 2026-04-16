@@ -1,7 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown } from 'lucide-react';
+import ProfileModal from './ProfileModal';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -20,6 +21,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const isManager = user?.role === 'soc_manager';
   const navItems  = isManager ? managerNavItems : analystNavItems;
@@ -31,9 +33,9 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-background text-foreground">
       {/* ── Sidebar ── */}
-      <aside className="w-64 bg-card border-r border-border flex flex-col flex-shrink-0">
+      <aside className="w-64 bg-card border-r border-border flex flex-col flex-shrink-0 relative z-40">
 
         {/* Logo */}
         <div className="p-5 border-b border-border">
@@ -88,40 +90,59 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             );
           })}
         </nav>
-
-        {/* User info */}
-        <div className="p-3 border-t border-border">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isManager
-                ? 'bg-accent/10 border border-accent/20'
-                : 'bg-primary/10 border border-primary/20'
-            }`}>
-              <User className={`w-4 h-4 ${isManager ? 'text-accent' : 'text-primary'}`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
-              <p className="text-[10px] text-muted-foreground font-mono uppercase">
-                {isManager ? 'SOC Manager' : 'Junior Analyst'}
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="text-muted-foreground hover:text-destructive transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       </aside>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto bg-background/50 relative">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 h-16 border-b border-border bg-background/80 backdrop-blur-md px-6 flex items-center justify-end">
+          <div className="flex items-center gap-6">
+            <div 
+              className="flex items-center gap-3 cursor-pointer group hover:opacity-80 transition-all p-1.5 rounded-xl hover:bg-secondary/50"
+              onClick={() => setShowProfileModal(true)}
+              title="View Profile Settings"
+            >
+              <div className="text-right">
+                <p className="text-sm font-bold text-foreground leading-none group-hover:text-primary transition-colors">{user?.name}</p>
+                <p className={`text-[9px] font-mono mt-1 px-1.5 py-0.5 rounded border uppercase tracking-wider inline-block ${
+                  isManager 
+                    ? 'text-accent border-accent/20 bg-accent/5' 
+                    : 'text-primary border-primary/20 bg-primary/5'
+                }`}>
+                  {isManager ? 'SOC Manager' : 'Junior Analyst'}
+                </p>
+              </div>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all ${
+                isManager
+                  ? 'bg-accent/10 border-accent/20 text-accent group-hover:bg-accent/20 shadow-[0_0_10px_rgba(232,127,53,0.1)]'
+                  : 'bg-primary/10 border-primary/20 text-primary group-hover:bg-primary/20 shadow-[0_0_10px_rgba(0,229,127,0.1)]'
+              }`}>
+                <User className="w-5 h-5" />
+              </div>
+            </div>
+            
+            <div className="h-6 w-[1px] bg-border" />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all text-xs font-medium"
+              title="Logout from session"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
         <div className="p-6">
           {children}
         </div>
       </main>
+
+      <ProfileModal 
+        isOpen={showProfileModal} 
+        onClose={() => setShowProfileModal(false)} 
+      />
     </div>
   );
 };

@@ -78,8 +78,22 @@ const Dashboard = () => {
                 className="flex items-center gap-4 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer"
               >
                 <span className="font-mono text-xs text-muted-foreground w-16">{alert.id}</span>
-                <SeverityBadge severity={alert.severity} />
-                <span className="text-sm text-foreground flex-1 truncate">{alert.title}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm font-medium text-foreground truncate">{alert.title}</p>
+                    <SeverityBadge severity={alert.severity} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{alert.sourceIp} → {alert.destIp}</p>
+                  {alert.tags && (
+                    <div className="flex gap-1 mt-1.5 overflow-hidden">
+                      {alert.tags.split(',').map(tag => (
+                        <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-secondary border border-border rounded text-muted-foreground font-mono uppercase">
+                          {tag.trim()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <StatusBadge status={alert.status} />
                 <span className="text-xs text-muted-foreground font-mono">
                   {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
