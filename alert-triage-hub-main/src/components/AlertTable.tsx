@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAlerts, SecurityAlert, Severity, AlertStatus } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from './SeverityBadge';
@@ -8,7 +8,7 @@ import AlertFormModal from './AlertFormModal';
 import { Eye, Hand, Search, XCircle, Plus, Pencil, Trash2, Filter } from 'lucide-react';
 
 const AlertTable = () => {
-  const { alerts, activeFilter, setFilter, claimAlert, investigateAlert, closeAlert, deleteAlert } = useAlerts();
+  const { alerts, activeFilter, setFilter, claimAlert, investigateAlert, closeAlert, deleteAlert, selectedAlertId, setSelectedAlertId } = useAlerts();
   const { user } = useAuth();
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
   const [editAlert, setEditAlert] = useState<SecurityAlert | null>(null);
@@ -22,6 +22,17 @@ const AlertTable = () => {
   };
 
   const isManager = user?.role === 'soc_manager';
+  
+  useEffect(() => {
+    if (selectedAlertId && alerts.length > 0) {
+      const alert = alerts.find(a => a.id === selectedAlertId);
+      if (alert) {
+        setSelectedAlert(alert);
+        // Clear it so it doesn't reopen if the user navigates back to this page
+        setSelectedAlertId(null);
+      }
+    }
+  }, [selectedAlertId, alerts, setSelectedAlertId]);
 
   const filtered = alerts
     .filter(a => filterSeverity === 'all' || a.severity === filterSeverity)

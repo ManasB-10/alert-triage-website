@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type AlertStatus = 'new' | 'claimed' | 'investigating' | 'closed' | 'escalated';
@@ -24,6 +25,8 @@ export interface SecurityAlert {
   assetCriticality?: number;
   assetLocation?: string;
   resolutionNotes?: any;
+  assigned_to_user_id?: number | string | null;
+  detection_source?: string;
 }
 
 interface AlertContextType {
@@ -38,6 +41,8 @@ interface AlertContextType {
   investigateAlert: (id: string) => Promise<void>;
   setFilter: (status: AlertStatus | null) => void;
   activeFilter: AlertStatus | null;
+  selectedAlertId: string | null;
+  setSelectedAlertId: (id: string | null) => void;
 }
 
 const MOCK_ALERTS: SecurityAlert[] = [
@@ -88,10 +93,18 @@ const AlertContext = createContext<AlertContextType | undefined>(undefined);
 export function AlertProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [activeFilter, setActiveFilter] = useState<AlertStatus | null>(null);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const API = 'http://localhost:5000';
 
   const loadAlerts = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/alerts');
+      // Pass the current user ID to enforce visibility rules (New alerts vs My history)
+      const url = user?.id 
+        ? `${API}/api/alerts?viewing_user_id=${user.id}` 
+        : `${API}/api/alerts`;
+        
+      const res = await fetch(url);
       const data = await res.json();
       
       const getSource = (type: string): AlertSource => {
@@ -138,7 +151,8 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         assetType: d.asset_type,
         assetCriticality: d.criticality_score,
         assetLocation: d.asset_location,
-        detection_source: d.detection_source
+        detection_source: d.detection_source,
+        assigned_to_user_id: d.assigned_to_user_id
       };
       });
       setAlerts(mapped);
@@ -147,9 +161,9 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadAlerts();
-  }, [activeFilter]); // Refresh if activeFilter changes, or could be polled
+  }, [activeFilter, user?.id]); // Refresh if filter or user changes
 
   const addAlert = (alert: Omit<SecurityAlert, 'id' | 'timestamp' | 'status' | 'notes'>) => {
     // Implement POST if required, fallback for now
@@ -219,7 +233,11 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AlertContext.Provider value={{ alerts, addAlert, updateAlert, deleteAlert, claimAlert, investigateAlert, closeAlert, addNote, saveInvestigationDetails, setFilter, activeFilter }}>
+    <AlertContext.Provider value={{
+      alerts, addAlert, updateAlert, deleteAlert, claimAlert, investigateAlert,
+      closeAlert, addNote, saveInvestigationDetails, setFilter, activeFilter,
+      selectedAlertId, setSelectedAlertId
+    }}>
       {children}
     </AlertContext.Provider>
   );

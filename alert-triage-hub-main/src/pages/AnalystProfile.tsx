@@ -33,17 +33,17 @@ const AnalystProfile = () => {
       // 1. Fetch overall performance stats
       const perfRes = await fetch(`${API}/api/manager/analyst-performance`);
       const perfData = await perfRes.json();
-      const myPerf = Array.isArray(perfData) ? perfData.find((a: any) => String(a.user_id) === String(user?.id)) : null;
-      setStats(myPerf);
+      console.log("Full Performance Data from Server:", perfData);
 
-      // 2. Fetch recent alerts handled by this analyst
-      const alertsRes = await fetch(`${API}/api/alerts`);
-      const allAlerts = await alertsRes.json();
-      const myAlerts = Array.isArray(allAlerts) ? allAlerts
-        .filter((a: any) => String(a.assigned_analyst_id) === String(user?.id))
-        .filter((a: any) => a.status === 'closed' || a.status === 'escalated')
-        .slice(0, 10) : [];
-      setRecentAlerts(myAlerts);
+      const myPerf = Array.isArray(perfData) ? perfData.find((a: any) => String(a.user_id) === String(user?.id)) : null;
+      console.log("My Statistics Found for User ID", user?.id, ":", myPerf);
+
+      setStats(myPerf || { total_handled: 0, in_progress: 0, completed: 0, avg_ai_score: 0, avg_time: 0 });
+
+      // 2. Fetch recent alerts handled by this analyst (Limited to 10 most recent)
+      const alertsRes = await fetch(`${API}/api/alerts?assigned_to_user_id=${user?.id}&status_in=closed,escalated&limit=10`);
+      const myAlerts = await alertsRes.json();
+      setRecentAlerts(Array.isArray(myAlerts) ? myAlerts : []);
     } catch (e) {
       console.error('Failed to fetch analyst data:', e);
     } finally {
@@ -84,7 +84,7 @@ const AnalystProfile = () => {
   return (
     <DashboardLayout>
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-up">
-        
+
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-border">
           <div className="flex items-center gap-5">
@@ -102,23 +102,23 @@ const AnalystProfile = () => {
             </div>
           </div>
           <div className="flex gap-3">
-             <div className="bg-secondary/30 px-6 py-3 rounded-xl border border-border flex flex-col items-center">
-                <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Global AI Rating</p>
-                <div className="flex items-center gap-2">
-                  <Award className={`w-5 h-5 ${stats?.avg_ai_score >= 80 ? 'text-yellow-400' : 'text-primary'}`} />
-                  <span className="text-2xl font-bold font-mono text-foreground">
-                    {stats ? Math.round(stats.avg_ai_score) : '--'}
-                  </span>
-                </div>
-             </div>
+            <div className="bg-secondary/30 px-6 py-3 rounded-xl border border-border flex flex-col items-center">
+              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Average Score</p>
+              <div className="flex items-center gap-2">
+                <Award className={`w-5 h-5 ${stats?.avg_ai_score >= 80 ? 'text-yellow-400' : 'text-primary'}`} />
+                <span className="text-2xl font-bold font-mono text-foreground">
+                  {stats ? Math.round(stats.avg_ai_score) : '--'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* Left Column: Profile Settings & Quick Stats */}
           <div className="lg:col-span-1 space-y-8">
-            
+
             {/* Performance Widgets */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-card border border-border p-4 rounded-xl space-y-2">
@@ -144,7 +144,7 @@ const AnalystProfile = () => {
               <div className="p-6 space-y-5">
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider ml-1">Full Name</label>
-                  <input 
+                  <input
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-all transition-all"
@@ -152,14 +152,14 @@ const AnalystProfile = () => {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider ml-1">Email Address</label>
-                  <input 
+                  <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                   />
                 </div>
-                <button 
+                <button
                   onClick={handleSave}
                   disabled={loading}
                   className="w-full bg-primary hover:bg-primary/90 text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 active:scale-[0.98] disabled:opacity-50 mt-2"
@@ -183,8 +183,8 @@ const AnalystProfile = () => {
                   <p className="text-xs text-muted-foreground font-mono uppercase tracking-widest">Quality score per investigation</p>
                 </div>
               </div>
-              <button 
-                onClick={fetchAnalystData} 
+              <button
+                onClick={fetchAnalystData}
                 className="p-2 text-muted-foreground hover:text-foreground transition-colors"
                 title="Refresh Feed"
               >
@@ -210,16 +210,15 @@ const AnalystProfile = () => {
                           {alert.status === 'closed' ? 'Resolved' : 'Escalated'}: {alert.closed_at ? new Date(alert.closed_at).toLocaleString() : 'Recently'}
                         </p>
                       </div>
-                      <div className={`px-4 py-2 rounded-xl text-center border ${
-                        (alert.ai_score ?? 0) >= 80 ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                        (alert.ai_score ?? 0) >= 50 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
-                        'bg-destructive/10 border-destructive/30 text-destructive'
-                      }`}>
+                      <div className={`px-4 py-2 rounded-xl text-center border ${(alert.ai_score ?? 0) >= 80 ? 'bg-green-500/10 border-green-500/30 text-green-400' :
+                          (alert.ai_score ?? 0) >= 50 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                            'bg-destructive/10 border-destructive/30 text-destructive'
+                        }`}>
                         <p className="text-[10px] font-mono uppercase tracking-widest font-bold mb-0.5">Rating</p>
                         <p className="text-xl font-bold font-mono leading-none">{alert.ai_score ?? '--'}%</p>
                       </div>
                     </div>
-                    
+
                     <div className="bg-secondary/20 rounded-xl p-4 border border-border/50">
                       <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-3 flex items-center gap-2">
                         <BrainCircuit className="w-3 h-3 text-primary" />

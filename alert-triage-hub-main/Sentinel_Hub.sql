@@ -72,7 +72,7 @@ CREATE TABLE analyst_performance (
     in_progress_count INT DEFAULT 0,
     completed_count INT DEFAULT 0,
     average_resolution_time_minutes INT DEFAULT 0,
-    last_action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    average_ai_score DECIMAL(5,2) DEFAULT 0.00,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 

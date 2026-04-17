@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SecurityAlert } from '@/context/AlertContext';
 import { useAlerts } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
@@ -13,8 +14,9 @@ interface Props {
 }
 
 const AlertDetailModal = ({ alert, onClose }: Props) => {
-  const { claimAlert, investigateAlert, closeAlert, saveInvestigationDetails, setFilter } = useAlerts();
+  const { claimAlert, investigateAlert, closeAlert, saveInvestigationDetails, setFilter, setSelectedAlertId } = useAlerts();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isManager = user?.role === 'soc_manager';
 
   const [showDetails, setShowDetails] = useState(alert.status === 'new' || alert.status === 'closed');
@@ -56,19 +58,33 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
 
   const isEditable = alert.status === 'investigating';
 
+  const mustEscalate = ['critical', 'high'].includes(invData.severity) || invData.resolution === 'True Positive';
+
+  // Automatically sync l2Escalation state with mustEscalate requirement
+  useEffect(() => {
+    if (mustEscalate && invData.l2Escalation !== 'Yes') {
+      setInvData(prev => ({ ...prev, l2Escalation: 'Yes' }));
+    }
+  }, [mustEscalate, invData.l2Escalation]);
+
   const isFormComplete = Boolean(
     invData.severity &&
-    invData.who.trim() && invData.what.trim() && invData.when.trim() &&
-    invData.where.trim() && invData.why.trim() && invData.l2Escalation &&
+    invData.who.trim() && 
+    invData.what.trim() && 
+    invData.when.trim() &&
+    invData.where.trim() && 
+    invData.why.trim() && 
+    (invData.l2Escalation || mustEscalate) &&
     invData.l2Reason.trim() &&
     invData.resolution
   );
 
-  const mustEscalate = ['critical', 'high'].includes(invData.severity) || invData.resolution === 'True Positive';
-
   const handleInvestigate = async () => {
     await investigateAlert(alert.id);
+    setFilter('investigating');
+    setSelectedAlertId(alert.id);
     toast.success("Investigation phase started.");
+    navigate('/alerts');
   };
 
   const handleReopen = async () => {

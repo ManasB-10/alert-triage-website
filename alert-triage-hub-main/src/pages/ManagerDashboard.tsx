@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import {
   User, Loader2, RefreshCw, ShieldAlert, TrendingUp, Trash2, X, Eye, EyeOff,
+  BarChart2, Users, AlertTriangle, Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import SeverityBadge from '@/components/SeverityBadge';
@@ -105,9 +106,8 @@ const ManagerDashboard: React.FC = () => {
       setConfirmDeleteModalAlertId(null);
     }
   };
-
+  const handleCardClick = async (cardId: 'total' | 'critical' | 'open' | 'analysts') => {
     setActiveModalCard(cardId);
-    
     setModalLoading(true);
     try {
       let query = '';
@@ -514,87 +514,102 @@ const ManagerDashboard: React.FC = () => {
             <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center">
+                  <ShieldAlert className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-foreground capitalize">{activeModalCard} View</h2>
+                  <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">Incident Drilldown</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveModalCard(null)}
+                className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
 
-                modalLoading ? (
-                  <div className="flex items-center justify-center py-16">
-                    <Loader2 className="w-6 h-6 animate-spin text-accent" />
-                  </div>
-                ) : (
-                  <div className="border border-border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="border-b border-border bg-secondary/20">
-                         <tr>
-                          {['ID', 'Event', 'Severity', 'Status', 'Source', 'Tags', 'Date', 'Action'].map(h => (
-                            <th key={h} className="text-left py-3 px-4 text-xs font-mono text-muted-foreground uppercase last:text-center">
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {modalAlerts.map(alert => (
-                          <tr key={alert.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors group">
-                            <td className="py-3 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap">ALT-{String(alert.id).padStart(3, '0')}</td>
-                            <td className="py-3 px-4">
-                              <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{alert.event_type}</p>
-                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{alert.source_ip} → {alert.dest_ip}</p>
-                            </td>
-                            <td className="py-3 px-4 text-xs"><SeverityBadge severity={alert.severity} /></td>
-                            <td className="py-3 px-4 text-xs"><StatusBadge status={alert.status} /></td>
-                            <td className="py-3 px-4 text-[10px] text-muted-foreground font-mono uppercase whitespace-nowrap">{alert.detection_source || '—'}</td>
-                            <td className="py-3 px-4">
-                              <div className="flex flex-wrap gap-1 max-w-[120px]">
-                                {alert.tags ? alert.tags.split(',').map(tag => (
-                                  <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-secondary border border-border rounded text-muted-foreground font-mono uppercase">
-                                    {tag.trim()}
-                                  </span>
-                                )) : <span className="text-muted-foreground text-[10px]">—</span>}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
-                              {alert.trigger_time ? new Date(alert.trigger_time).toLocaleDateString() : (alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—')}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              {confirmDeleteModalAlertId === alert.id ? (
-                                <div className="flex items-center gap-2 justify-center">
-                                  <span className="text-xs text-muted-foreground font-mono">Sure?</span>
-                                  <button
-                                    onClick={() => handleDeleteModalAlert(alert.id)}
-                                    disabled={deletingModalAlertId === alert.id}
-                                    className="text-xs text-destructive border border-destructive/30 hover:bg-destructive/10 rounded px-2 py-1 transition-all disabled:opacity-50"
-                                  >
-                                    {deletingModalAlertId === alert.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes'}
-                                  </button>
-                                  <button
-                                    onClick={() => setConfirmDeleteModalAlertId(null)}
-                                    className="text-xs text-muted-foreground border border-border hover:bg-secondary rounded px-2 py-1 transition-all"
-                                  >
-                                    No
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setConfirmDeleteModalAlertId(alert.id)}
-                                  className="mx-auto text-xs text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/30 rounded px-2 py-1 transition-all flex items-center justify-center p-1"
-                                  title="Delete Alert"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
+            <div className="flex-1 overflow-auto p-5">
+              {modalLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-accent" />
+                </div>
+              ) : (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-secondary/20">
+                       <tr>
+                        {['ID', 'Event', 'Severity', 'Status', 'Source', 'Tags', 'Date', 'Action'].map(h => (
+                          <th key={h} className="text-left py-3 px-4 text-xs font-mono text-muted-foreground uppercase last:text-center">
+                            {h}
+                          </th>
                         ))}
-                        {modalAlerts.length === 0 && (
-                          <tr>
-                            <td colSpan={8} className="text-center py-10 text-xs text-muted-foreground font-mono">
-                              No alerts found for this category.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalAlerts.map(alert => (
+                        <tr key={alert.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors group">
+                          <td className="py-3 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap">ALT-{String(alert.id).padStart(3, '0')}</td>
+                          <td className="py-3 px-4">
+                            <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{alert.event_type}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{alert.source_ip} → {alert.dest_ip}</p>
+                          </td>
+                          <td className="py-3 px-4 text-xs"><SeverityBadge severity={alert.severity} /></td>
+                          <td className="py-3 px-4 text-xs"><StatusBadge status={alert.status} /></td>
+                          <td className="py-3 px-4 text-[10px] text-muted-foreground font-mono uppercase whitespace-nowrap">{alert.detection_source || '—'}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex flex-wrap gap-1 max-w-[120px]">
+                              {alert.tags ? alert.tags.split(',').map(tag => (
+                                <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-secondary border border-border rounded text-muted-foreground font-mono uppercase">
+                                  {tag.trim()}
+                                </span>
+                              )) : <span className="text-muted-foreground text-[10px]">—</span>}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+                            {alert.trigger_time ? new Date(alert.trigger_time).toLocaleDateString() : (alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—')}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {confirmDeleteModalAlertId === alert.id ? (
+                              <div className="flex items-center gap-2 justify-center">
+                                <span className="text-xs text-muted-foreground font-mono">Sure?</span>
+                                <button
+                                  onClick={() => handleDeleteModalAlert(alert.id)}
+                                  disabled={deletingModalAlertId === alert.id}
+                                  className="text-xs text-destructive border border-destructive/30 hover:bg-destructive/10 rounded px-2 py-1 transition-all disabled:opacity-50"
+                                >
+                                  {deletingModalAlertId === alert.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes'}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteModalAlertId(null)}
+                                  className="text-xs text-muted-foreground border border-border hover:bg-secondary rounded px-2 py-1 transition-all"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteModalAlertId(alert.id)}
+                                className="mx-auto text-xs text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/30 rounded px-2 py-1 transition-all flex items-center justify-center p-1"
+                                title="Delete Alert"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {modalAlerts.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="text-center py-10 text-xs text-muted-foreground font-mono">
+                            No alerts found for this category.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

@@ -24,6 +24,9 @@ def get_alerts():
     status_filter = request.args.get('status')
     severity_filter = request.args.get('severity')
     status_in = request.args.get('status_in')
+    assigned_to_user_id = request.args.get('assigned_to_user_id')
+    viewing_user_id = request.args.get('viewing_user_id')
+    limit = request.args.get('limit')
     
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -32,13 +35,20 @@ def get_alerts():
         SELECT a.id, a.source_ip, a.dest_ip, a.event_type, a.severity, a.status, 
                a.assigned_analyst_id, a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
                asst.asset_name, asst.asset_type, asst.criticality_score, asst.location as asset_location,
-               t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as closed_at
+               t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as closed_at, t.assigned_to_user_id
         FROM alerts a
         LEFT JOIN assets asst ON a.asset_id = asst.asset_id
         LEFT JOIN tickets t ON a.id = t.alert_id
     """
     conditions = []
     params = []
+
+    # Apply global privacy rules:
+    # 1. New alerts are visible to everyone
+    # 2. Other alerts are only visible to the owner (unless it's a specific query for another user, e.g. for Manager views)
+    if viewing_user_id:
+        conditions.append("(a.status = 'new' OR a.assigned_analyst_id = %s OR t.assigned_to_user_id = %s)")
+        params.extend([viewing_user_id, viewing_user_id])
 
     if status_filter:
         conditions.append("a.status = %s")
@@ -51,11 +61,18 @@ def get_alerts():
         placeholders = ', '.join(['%s'] * len(statuses))
         conditions.append(f"a.status IN ({placeholders})")
         params.extend(statuses)
+    if assigned_to_user_id:
+        conditions.append("(a.assigned_analyst_id = %s OR t.assigned_to_user_id = %s)")
+        params.extend([assigned_to_user_id, assigned_to_user_id])
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
     query += " ORDER BY a.id DESC"
+    
+    if limit:
+        query += " LIMIT %s"
+        params.append(int(limit))
     
     cursor.execute(query, tuple(params))
     alerts = cursor.fetchall()
@@ -94,6 +111,8 @@ def claim_alert():
             )
             
         conn.commit()
+        # SYNC PERFORMANCE
+        sync_analyst_performance(conn, user_id)
         return jsonify({"message": "Alert claimed successfully"}), 200
     except Exception as e:
         return jsonify({"message": str(e)}), 500
@@ -171,6 +190,71 @@ def calculate_ai_score(conn, alert_id, inv_data):
     cursor.close()
     return min(100, score), " | ".join(reasoning)
 
+def sync_analyst_performance(conn, user_id):
+    """
+    Recalculates and updates the analyst_performance table for a specific user.
+    """
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # 1. Basic Counts - Purely based on Ticket Ownership
+        # Total handled: Any unique alert the analyst has submitted a ticket for
+        cursor.execute("SELECT COUNT(DISTINCT alert_id) as total FROM tickets WHERE assigned_to_user_id = %s", (user_id,))
+        total_handled = cursor.fetchone()['total'] or 0
+
+        # In progress: Alerts handled by this analyst that are still 'claimed' or 'investigating'
+        cursor.execute("""
+            SELECT COUNT(*) as in_p 
+            FROM alerts a 
+            JOIN tickets t ON a.id = t.alert_id 
+            WHERE t.assigned_to_user_id = %s AND a.status IN ('claimed', 'investigating')
+        """, (user_id,))
+        in_progress = cursor.fetchone()['in_p'] or 0
+
+        # Completed: Alerts handled by this analyst that are 'closed' or 'escalated'
+        cursor.execute("""
+            SELECT COUNT(*) as comp 
+            FROM alerts a 
+            JOIN tickets t ON a.id = t.alert_id 
+            WHERE t.assigned_to_user_id = %s AND a.status IN ('closed', 'escalated')
+        """, (user_id,))
+        completed = cursor.fetchone()['comp'] or 0
+
+        # 2. Performance Metrics
+        cursor.execute("SELECT AVG(ai_score) as avg_score FROM tickets WHERE assigned_to_user_id = %s AND ai_score > 0", (user_id,))
+        avg_score = cursor.fetchone()['avg_score'] or 0
+
+        # Calculate average resolution time (minutes)
+        cursor.execute("""
+            SELECT AVG(TIMESTAMPDIFF(MINUTE, a.created_at, t.updated_at)) as avg_time
+            FROM tickets t
+            JOIN alerts a ON a.id = t.alert_id
+            WHERE t.assigned_to_user_id = %s AND a.status IN ('closed', 'escalated')
+        """, (user_id,))
+        avg_time = cursor.fetchone()['avg_time'] or 0
+
+        # 3. Update the table
+        cursor.execute("SELECT performance_id FROM analyst_performance WHERE user_id = %s", (user_id,))
+        perf_row = cursor.fetchone()
+
+        if perf_row:
+            cursor.execute("""
+                UPDATE analyst_performance 
+                SET total_alerts_handled = %s, in_progress_count = %s, completed_count = %s, 
+                    average_resolution_time_minutes = %s, average_ai_score = %s
+                WHERE user_id = %s
+            """, (total_handled, in_progress, completed, int(avg_time), float(avg_score), user_id))
+        else:
+            cursor.execute("""
+                INSERT INTO analyst_performance (user_id, total_alerts_handled, in_progress_count, completed_count, average_resolution_time_minutes, average_ai_score)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, total_handled, in_progress, completed, int(avg_time), float(avg_score)))
+        
+        conn.commit()
+    except Exception as e:
+        print(f"Error syncing performance for user {user_id}: {e}")
+    finally:
+        cursor.close()
+
 # 3.5. Route for SAVING RESOLUTION NOTES
 @app.route('/api/alerts/<int:alert_id>/resolution', methods=['POST'])
 def save_resolution(alert_id):
@@ -230,7 +314,21 @@ def save_resolution(alert_id):
                     (alert_id, analyst_id or 1, json.dumps(resolution_notes), ai_score, ai_reasoning)
                 )
         
+        # Get the analyst ID from the alert or ticket to sync their performance
+        cursor.execute("SELECT assigned_analyst_id FROM alerts WHERE id = %s", (alert_id,))
+        row = cursor.fetchone()
+        user_id = row[0] if row else None
+        
+        if not user_id:
+            cursor.execute("SELECT assigned_to_user_id FROM tickets WHERE alert_id = %s", (alert_id,))
+            row = cursor.fetchone()
+            user_id = row[0] if row else None
+
         conn.commit()
+        
+        if user_id:
+            sync_analyst_performance(conn, user_id)
+
         return jsonify({"message": "Resolution details saved successfully"}), 200
     except Exception as e:
         return jsonify({"message": str(e)}), 500
@@ -455,15 +553,12 @@ def analyst_performance():
     try:
         query = """
             SELECT u.user_id, u.username, u.full_name,
-                   COUNT(DISTINCT a.id) as total_handled,
-                   COUNT(DISTINCT CASE WHEN a.status IN ('claimed', 'investigating') THEN a.id END) as in_progress,
-                   COUNT(DISTINCT CASE WHEN a.status = 'closed' THEN a.id END) as completed,
-                   IFNULL(AVG(t.ai_score), 0) as avg_ai_score
+                   p.total_alerts_handled as total_handled, p.in_progress_count as in_progress, p.completed_count as completed,
+                   p.average_ai_score as avg_ai_score, p.average_resolution_time_minutes as avg_time
             FROM users u
-            LEFT JOIN alerts a ON u.user_id = a.assigned_analyst_id
-            LEFT JOIN tickets t ON u.user_id = t.assigned_to_user_id
+            LEFT JOIN analyst_performance p ON u.user_id = p.user_id
             WHERE u.role = 'Junior_Analyst'
-            GROUP BY u.user_id, u.username, u.full_name
+            ORDER BY u.user_id
         """
         cursor.execute(query)
         return jsonify(cursor.fetchall()), 200
