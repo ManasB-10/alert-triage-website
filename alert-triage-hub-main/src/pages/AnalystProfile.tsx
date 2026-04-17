@@ -103,7 +103,7 @@ const AnalystProfile = () => {
           </div>
           <div className="flex gap-3">
             <div className="bg-secondary/30 px-6 py-3 rounded-xl border border-border flex flex-col items-center">
-              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Average Score</p>
+              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Average AI Score</p>
               <div className="flex items-center gap-2">
                 <Award className={`w-5 h-5 ${stats?.avg_ai_score >= 80 ? 'text-yellow-400' : 'text-primary'}`} />
                 <span className="text-2xl font-bold font-mono text-foreground">
