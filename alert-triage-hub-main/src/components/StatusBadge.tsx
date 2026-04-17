@@ -5,6 +5,7 @@ const config: Record<AlertStatus, { label: string; className: string; dot: strin
   claimed: { label: 'Claimed', className: 'bg-warning/10 text-warning border-warning/20', dot: 'bg-warning' },
   investigating: { label: 'Investigating', className: 'bg-info/10 text-info border-info/20', dot: 'bg-info animate-pulse-glow' },
   closed: { label: 'Closed', className: 'bg-success/10 text-success border-success/20', dot: 'bg-success' },
+  escalated: { label: 'Escalated', className: 'bg-purple-500/10 text-purple-400 border-purple-500/20', dot: 'bg-purple-500 animate-pulse-glow' },
 };
 
 const StatusBadge = ({ status }: { status: AlertStatus }) => {

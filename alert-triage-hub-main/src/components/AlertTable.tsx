@@ -8,13 +8,18 @@ import AlertFormModal from './AlertFormModal';
 import { Eye, Hand, Search, XCircle, Plus, Pencil, Trash2, Filter } from 'lucide-react';
 
 const AlertTable = () => {
-  const { alerts, claimAlert, investigateAlert, closeAlert, deleteAlert } = useAlerts();
+  const { alerts, activeFilter, setFilter, claimAlert, investigateAlert, closeAlert, deleteAlert } = useAlerts();
   const { user } = useAuth();
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
   const [editAlert, setEditAlert] = useState<SecurityAlert | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [filterSeverity, setFilterSeverity] = useState<Severity | 'all'>('all');
-  const [filterStatus, setFilterStatus] = useState<AlertStatus | 'all'>('all');
+  
+  // Use context filter if available, otherwise 'all'
+  const filterStatus = activeFilter || 'all';
+  const setFilterStatus = (status: AlertStatus | 'all') => {
+    setFilter(status === 'all' ? null : status);
+  };
 
   const isManager = user?.role === 'soc_manager';
 
@@ -50,6 +55,7 @@ const AlertTable = () => {
             <option value="claimed">Claimed</option>
             <option value="investigating">Investigating</option>
             <option value="closed">Closed</option>
+            <option value="escalated">Escalated</option>
           </select>
         </div>
 
@@ -116,7 +122,7 @@ const AlertTable = () => {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            claimAlert(alert.id, user!.name);
+                            claimAlert(alert.id, user!.id);
                           }} 
                           className="inline-flex items-center gap-1.5 bg-[#00e57f] text-black px-3 py-1.5 rounded text-sm font-semibold hover:bg-[#00db79] transition-colors shadow-sm" 
                           title="Claim"

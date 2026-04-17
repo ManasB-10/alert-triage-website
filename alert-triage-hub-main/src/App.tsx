@@ -8,8 +8,11 @@ import { AlertProvider } from "@/context/AlertContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
+import AnalystProfile from "./pages/AnalystProfile";
+import ManagerProfile from "./pages/ManagerProfile";
 import Alerts from "./pages/Alerts";
 import CriticalAlerts from "./pages/CriticalAlerts";
+import EscalatedAlerts from "./pages/EscalatedAlerts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,7 +36,10 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/manager" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
               <Route path="/critical" element={<ProtectedRoute><CriticalAlerts /></ProtectedRoute>} />
+              <Route path="/escalated" element={<ProtectedRoute><EscalatedAlerts /></ProtectedRoute>} />
               <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+              <Route path="/profile/analyst" element={<ProtectedRoute><AnalystProfile /></ProtectedRoute>} />
+              <Route path="/profile/manager" element={<ProtectedRoute><ManagerProfile /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

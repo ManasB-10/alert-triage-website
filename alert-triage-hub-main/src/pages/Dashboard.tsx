@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from '@/components/SeverityBadge';
 import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
-import { Clock, Activity, Hand } from 'lucide-react';
+import { Clock, Activity, Hand, ShieldPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
@@ -104,7 +104,7 @@ const Dashboard = () => {
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      claimAlert(alert.id, user?.name || 'Analyst');
+                      claimAlert(alert.id, user!.id);
                     }}
                     className="ml-2 flex flex-shrink-0 items-center gap-1.5 bg-[#00e57f] text-black px-3 py-1.5 rounded text-sm font-semibold hover:bg-[#00db79] transition-colors shadow-sm"
                   >

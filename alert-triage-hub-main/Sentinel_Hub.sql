@@ -112,3 +112,5 @@ WHERE u.role = 'Junior_Analyst'
 GROUP BY u.user_id, u.username;
 select * from users;
 select * from alerts;
+select * from assets;
+select * from tickets;

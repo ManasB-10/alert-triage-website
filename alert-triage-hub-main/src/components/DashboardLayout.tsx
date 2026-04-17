@@ -1,8 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown } from 'lucide-react';
-import ProfileModal from './ProfileModal';
+import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown, ShieldAlert } from 'lucide-react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -11,6 +10,7 @@ interface DashboardLayoutProps {
 const analystNavItems = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { label: 'Alerts',    path: '/alerts',    icon: AlertTriangle    },
+  { label: 'Escalated', path: '/escalated', icon: ShieldAlert },
 ];
 
 const managerNavItems = [
@@ -21,7 +21,6 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const isManager = user?.role === 'soc_manager';
   const navItems  = isManager ? managerNavItems : analystNavItems;
@@ -32,11 +31,15 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     navigate('/');
   };
 
+  const handleProfileClick = () => {
+    navigate(isManager ? '/profile/manager' : '/profile/analyst');
+  };
+
   return (
     <div className="min-h-screen flex bg-background text-foreground">
       {/* ── Sidebar ── */}
       <aside className="w-64 bg-card border-r border-border flex flex-col flex-shrink-0 relative z-40">
-
+        
         {/* Logo */}
         <div className="p-5 border-b border-border">
           <div
@@ -99,7 +102,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <div className="flex items-center gap-6">
             <div 
               className="flex items-center gap-3 cursor-pointer group hover:opacity-80 transition-all p-1.5 rounded-xl hover:bg-secondary/50"
-              onClick={() => setShowProfileModal(true)}
+              onClick={handleProfileClick}
               title="View Profile Settings"
             >
               <div className="text-right">
@@ -138,11 +141,6 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           {children}
         </div>
       </main>
-
-      <ProfileModal 
-        isOpen={showProfileModal} 
-        onClose={() => setShowProfileModal(false)} 
-      />
     </div>
   );
 };

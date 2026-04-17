@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
 import re
+import json
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -28,13 +29,13 @@ def get_alerts():
     cursor = conn.cursor(dictionary=True)
 
     query = """
-        SELECT a.*, 
-               asst.asset_name, 
-               asst.asset_type, 
-               asst.criticality_score, 
-               asst.location as asset_location
+        SELECT a.id, a.source_ip, a.dest_ip, a.event_type, a.severity, a.status, 
+               a.assigned_analyst_id, a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
+               asst.asset_name, asst.asset_type, asst.criticality_score, asst.location as asset_location,
+               t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as closed_at
         FROM alerts a
         LEFT JOIN assets asst ON a.asset_id = asst.asset_id
+        LEFT JOIN tickets t ON a.id = t.alert_id
     """
     conditions = []
     params = []
@@ -64,6 +65,8 @@ def get_alerts():
     for alert in alerts:
         if alert.get('created_at'):
             alert['created_at'] = str(alert['created_at'])
+        if alert.get('closed_at'):
+            alert['closed_at'] = str(alert['closed_at'])
             
     return jsonify(alerts)
 
@@ -77,14 +80,163 @@ def claim_alert():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Updates status to 'claimed' and assigns it to the analyst
-    query = "UPDATE alerts SET status = 'claimed', assigned_analyst_id = %s WHERE id = %s"
-    cursor.execute(query, (user_id, alert_id))
+    try:
+        # Updates status to 'claimed' and assigns it to the analyst
+        query = "UPDATE alerts SET status = 'claimed', assigned_analyst_id = %s WHERE id = %s"
+        cursor.execute(query, (user_id, alert_id))
+        
+        # Initialize a ticket workflow entry
+        cursor.execute("SELECT id FROM tickets WHERE alert_id = %s", (alert_id,))
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO tickets (alert_id, assigned_to_user_id, resolution_notes) VALUES (%s, %s, %s)", 
+                (alert_id, user_id, '{}')
+            )
+            
+        conn.commit()
+        return jsonify({"message": "Alert claimed successfully"}), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# 3.4. AI Scorer Helper
+def calculate_ai_score(conn, alert_id, inv_data):
+    """
+    Calculates an 'AI Investigation Score' based on:
+    1. Completeness (40%) - Depth of 5 W's
+    2. Severity Accuracy (30%) - Match vs predefined
+    3. Resolution Logic (30%) - Heuristic check
+    """
+    cursor = conn.cursor(dictionary=True)
     
-    conn.commit()
+    # Get original alert for baseline
+    cursor.execute("SELECT severity, description, event_type FROM alerts WHERE id = %s", (alert_id,))
+    alert = cursor.fetchone()
+    if not alert:
+        return 0, "Alert not found."
+
+    score = 0
+    reasoning = []
+    
+    # 1. Completeness Check (40 pts)
+    fields = ['who', 'what', 'when', 'where', 'why']
+    field_pts = 0
+    for f in fields:
+        val = inv_data.get(f, '')
+        if len(val) > 20: 
+            field_pts += 8
+        elif len(val) > 5:
+            field_pts += 4
+    
+    if field_pts >= 35:
+        reasoning.append("✅ Excellent documentation: All 5 W's are thoroughly explained.")
+    elif field_pts >= 20:
+        reasoning.append("⚠️ Moderate documentation: Some investigation fields are brief.")
+    else:
+        reasoning.append("❌ Poor documentation: Investigation fields are missing or too sparse.")
+    score += field_pts
+
+    # 2. Severity Accuracy (30 pts)
+    original_sev = alert['severity'].lower()
+    final_sev = inv_data.get('severity', '').lower()
+    
+    sev_map = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
+    o_val = sev_map.get(original_sev, 0)
+    f_val = sev_map.get(final_sev, 0)
+    
+    if o_val == f_val:
+        score += 30
+        reasoning.append(f"✅ Accurate Criticality: Final assessment matches predicted {original_sev} severity.")
+    elif abs(o_val - f_val) == 1:
+        score += 15
+        reasoning.append(f"⚠️ Divergent Criticality: Assessment differs slightly from prediction ({final_sev} vs {original_sev}).")
+    else:
+        reasoning.append(f"❌ Criticality Gap: Final assessment deviates significantly from predicted risk.")
+
+    # 3. Resolution Logic (30 pts)
+    resolution = inv_data.get('resolution', '')
+    if original_sev in ['critical', 'high']:
+        if resolution == 'True Positive':
+            score += 30
+            reasoning.append("✅ Sound Resolution: High-risk alert correctly escalated as True Positive.")
+        else:
+            reasoning.append("❌ Logic Gap: High-risk alert dismissed as False Positive without sufficient justification.")
+    else:
+        # Low/Medium alerts can be either
+        score += 30
+        reasoning.append("✅ Logical Resolution: Triage decision aligns with observed activity risk.")
+
     cursor.close()
-    conn.close()
-    return jsonify({"message": "Alert claimed successfully"}), 200
+    return min(100, score), " | ".join(reasoning)
+
+# 3.5. Route for SAVING RESOLUTION NOTES
+@app.route('/api/alerts/<int:alert_id>/resolution', methods=['POST'])
+def save_resolution(alert_id):
+    data = request.json
+    resolution_notes = data.get('notes', {}) # Expecting a JSON dict of the 5 W's
+    status = data.get('status')
+    severity = data.get('severity')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Build dynamic update for alerts table based on what is provided
+        fields_to_update = []
+        params_to_update = []
+        
+        if status:
+            fields_to_update.append("status = %s")
+            params_to_update.append(status)
+        if severity:
+            fields_to_update.append("severity = %s")
+            params_to_update.append(severity)
+        
+        if fields_to_update:
+            alerts_query = f"UPDATE alerts SET {', '.join(fields_to_update)} WHERE id = %s"
+            params_to_update.append(alert_id)
+            cursor.execute(alerts_query, tuple(params_to_update))
+            
+        # 3. Handle Ticket Table (Upsert Logic)
+        if 'notes' in data:
+            resolution_notes = data.get('notes')
+            
+            # CALCULATE AI SCORE if closing or escalating
+            ai_score = 0
+            ai_reasoning = ""
+            if status in ['closed', 'escalated']:
+                ai_score, ai_reasoning = calculate_ai_score(conn, alert_id, resolution_notes)
+
+            # Check if ticket exists
+            cursor.execute("SELECT id FROM tickets WHERE alert_id = %s", (alert_id,))
+            ticket = cursor.fetchone()
+            
+            if ticket:
+                # Update existing
+                cursor.execute(
+                    "UPDATE tickets SET resolution_notes = %s, ai_score = %s, ai_reasoning = %s WHERE alert_id = %s", 
+                    (json.dumps(resolution_notes), ai_score, ai_reasoning, alert_id)
+                )
+            else:
+                # Create if missing (sanity check)
+                # Try to find assigned analyst id from alerts table
+                cursor.execute("SELECT assigned_analyst_id FROM alerts WHERE id = %s", (alert_id,))
+                alert_row = cursor.fetchone()
+                analyst_id = alert_row[0] if alert_row else 1
+                cursor.execute(
+                    "INSERT INTO tickets (alert_id, assigned_to_user_id, resolution_notes, ai_score, ai_reasoning) VALUES (%s, %s, %s, %s, %s)", 
+                    (alert_id, analyst_id or 1, json.dumps(resolution_notes), ai_score, ai_reasoning)
+                )
+        
+        conn.commit()
+        return jsonify({"message": "Resolution details saved successfully"}), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 # 4. Route for USER SIGNUP
 @app.route('/api/signup', methods=['POST'])
@@ -303,11 +455,13 @@ def analyst_performance():
     try:
         query = """
             SELECT u.user_id, u.username, u.full_name,
-                   COUNT(a.id) as total_handled,
-                   COUNT(CASE WHEN a.status IN ('claimed', 'investigating') THEN 1 END) as in_progress,
-                   COUNT(CASE WHEN a.status = 'closed' THEN 1 END) as completed
+                   COUNT(DISTINCT a.id) as total_handled,
+                   COUNT(DISTINCT CASE WHEN a.status IN ('claimed', 'investigating') THEN a.id END) as in_progress,
+                   COUNT(DISTINCT CASE WHEN a.status = 'closed' THEN a.id END) as completed,
+                   IFNULL(AVG(t.ai_score), 0) as avg_ai_score
             FROM users u
             LEFT JOIN alerts a ON u.user_id = a.assigned_analyst_id
+            LEFT JOIN tickets t ON u.user_id = t.assigned_to_user_id
             WHERE u.role = 'Junior_Analyst'
             GROUP BY u.user_id, u.username, u.full_name
         """

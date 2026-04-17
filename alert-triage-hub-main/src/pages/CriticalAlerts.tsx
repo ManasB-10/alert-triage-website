@@ -78,7 +78,7 @@ const CriticalAlerts = () => {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            claimAlert(alert.id, user?.name || 'Analyst');
+                            claimAlert(alert.id, user!.id);
                           }}
                           className="inline-flex items-center gap-1.5 bg-[#00e57f] text-black px-3 py-1.5 rounded text-sm font-semibold hover:bg-[#00db79] transition-colors shadow-sm"
                         >

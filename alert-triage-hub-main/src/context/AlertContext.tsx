@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-export type AlertStatus = 'new' | 'claimed' | 'investigating' | 'closed';
+export type AlertStatus = 'new' | 'claimed' | 'investigating' | 'closed' | 'escalated';
 export type AlertSource = 'Vulnerability Scanner' | 'IDS/IPS' | 'SIEM' | 'EDR' | 'Firewall' | 'Email Gateway' | 'WAF';
 
 export interface SecurityAlert {
@@ -19,6 +19,11 @@ export interface SecurityAlert {
   claimedBy?: string;
   closedAt?: string;
   notes: string[];
+  assetName?: string;
+  assetType?: string;
+  assetCriticality?: number;
+  assetLocation?: string;
+  resolutionNotes?: any;
 }
 
 interface AlertContextType {
@@ -27,9 +32,10 @@ interface AlertContextType {
   updateAlert: (id: string, updates: Partial<SecurityAlert>) => void;
   deleteAlert: (id: string) => void;
   claimAlert: (id: string, userId: string) => void;
-  investigateAlert: (id: string) => void;
   closeAlert: (id: string) => void;
   addNote: (id: string, note: string) => void;
+  saveInvestigationDetails: (id: string, notes: any, status?: string, severity?: string) => Promise<void>;
+  investigateAlert: (id: string) => Promise<void>;
   setFilter: (status: AlertStatus | null) => void;
   activeFilter: AlertStatus | null;
 }
@@ -99,7 +105,21 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         return 'SIEM';
       };
 
-      const mapped = data.map((d: any) => ({
+      const mapped = data.map((d: any) => {
+        let parsedNotes = null;
+        if (d.resolution_notes) {
+          if (typeof d.resolution_notes === 'string') {
+            try {
+              parsedNotes = JSON.parse(d.resolution_notes);
+            } catch (e) {
+              console.error("Failed to parse resolution notes string", e);
+            }
+          } else {
+            parsedNotes = d.resolution_notes; // Already an object
+          }
+        }
+        
+        return {
         id: `ALT-${String(d.id).padStart(3, '0')}`,
         rawId: d.id,
         title: d.event_type,
@@ -113,12 +133,14 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         tags: d.tags || '',
         claimedBy: d.assigned_analyst_name || d.claimed_by, // handle different join scenarios
         notes: d.notes ? d.notes.split('|') : [],
+        resolutionNotes: parsedNotes,
         assetName: d.asset_name,
         assetType: d.asset_type,
         assetCriticality: d.criticality_score,
         assetLocation: d.asset_location,
         detection_source: d.detection_source
-      }));
+      };
+      });
       setAlerts(mapped);
     } catch (e) {
       console.error('Failed to load alerts:', e);
@@ -148,7 +170,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
       await fetch('http://localhost:5000/api/claim-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alert_id: rawId, user_id: 1 }) // Using 1 as mock DB user id
+        body: JSON.stringify({ alert_id: rawId, user_id: parseInt(userId, 10) })
       });
       await loadAlerts();
     } catch (err) {
@@ -156,8 +178,18 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const investigateAlert = (id: string) => {
-    updateAlert(id, { status: 'investigating' });
+  const investigateAlert = async (id: string) => {
+    const rawId = parseInt(id.replace('ALT-', ''), 10);
+    try {
+      await fetch(`http://localhost:5000/api/alerts/${rawId}/resolution`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'investigating' })
+      });
+      await loadAlerts();
+    } catch (err) {
+      console.error("Error updating status to investigating:", err);
+    }
   };
 
   const closeAlert = (id: string) => {
@@ -172,8 +204,22 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     setActiveFilter(status);
   };
 
+  const saveInvestigationDetails = async (id: string, notes: any, status?: string, severity?: string) => {
+    const rawId = parseInt(id.replace('ALT-', ''), 10);
+    try {
+      await fetch(`http://localhost:5000/api/alerts/${rawId}/resolution`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes, status, severity })
+      });
+      await loadAlerts();
+    } catch (err) {
+      console.error("Error saving resolution:", err);
+    }
+  };
+
   return (
-    <AlertContext.Provider value={{ alerts, addAlert, updateAlert, deleteAlert, claimAlert, investigateAlert, closeAlert, addNote, setFilter, activeFilter }}>
+    <AlertContext.Provider value={{ alerts, addAlert, updateAlert, deleteAlert, claimAlert, investigateAlert, closeAlert, addNote, saveInvestigationDetails, setFilter, activeFilter }}>
       {children}
     </AlertContext.Provider>
   );
