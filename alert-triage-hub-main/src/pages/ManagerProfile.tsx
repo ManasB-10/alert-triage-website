@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
-import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings } from 'lucide-react';
+import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings, UserCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = 'http://localhost:5000';
@@ -156,6 +156,23 @@ const ManagerProfile = () => {
       toast.error(e.message || 'Failed to create analyst');
     } finally {
       setAddingAnalyst(false);
+    }
+  };
+
+  const handleToggleStatus = async (id: number) => {
+    try {
+      const res = await fetch(`${API}/api/manager/analysts/${id}/toggle-status`, { 
+        method: 'POST' 
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      
+      toast.success(data.message);
+      setAnalysts(prev => prev.map(a => 
+        a.user_id === id ? { ...a, account_status: data.new_status } : a
+      ));
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to update status');
     }
   };
 
@@ -339,8 +356,8 @@ const ManagerProfile = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-secondary/30 border-b border-border">
-                      {['Personnel', 'Endpoint ID', 'Joined Date', 'Status', 'Actions'].map(h => (
-                        <th key={h} className="text-left px-6 py-4 text-[10px] font-mono text-muted-foreground uppercase tracking-widest">{h}</th>
+                      {['Personnel', 'Endpoint ID', 'Joined Date', 'Avg Score', 'Status', 'Actions'].map(h => (
+                        <th key={h} className={`text-left px-6 py-4 text-[10px] font-mono text-muted-foreground uppercase tracking-widest ${h === 'Actions' ? 'text-right' : ''}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -348,7 +365,7 @@ const ManagerProfile = () => {
                     {fetchingAnalysts ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <tr key={i} className="animate-pulse">
-                          <td colSpan={5} className="px-6 py-4 bg-secondary/10 border-b border-border">
+                          <td colSpan={6} className="px-6 py-4 bg-secondary/10 border-b border-border">
                             <div className="h-4 bg-secondary rounded w-full"></div>
                           </td>
                         </tr>
@@ -370,16 +387,40 @@ const ManagerProfile = () => {
                           <td className="px-6 py-4 font-mono text-[11px] text-muted-foreground">{analyst.email}</td>
                           <td className="px-6 py-4 font-mono text-[11px] text-muted-foreground">{new Date(analyst.created_at).toLocaleDateString()}</td>
                           <td className="px-6 py-4">
+                            <div className="flex items-center gap-1">
+                               <span className={`text-sm font-bold ${
+                                 analyst.avg_ai_score >= 80 ? 'text-green-400' : 
+                                 analyst.avg_ai_score >= 50 ? 'text-accent' : 'text-red-400'
+                               }`}>
+                                 {parseFloat(analyst.avg_ai_score).toFixed(1)}
+                               </span>
+                               <span className="text-[10px] text-muted-foreground font-mono">%</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tight border ${
                                 analyst.account_status === 'Active' 
                                   ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                                  : 'bg-secondary border-border text-muted-foreground'
+                                  : 'bg-red-500/10 border-red-500/20 text-red-400'
                              }`}>
                                 {analyst.account_status}
                              </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                             {confirmDeleteId === analyst.user_id ? (
+                             <div className="flex items-center justify-end gap-1">
+                               <button 
+                                 onClick={() => handleToggleStatus(analyst.user_id)}
+                                 title={analyst.account_status === 'Active' ? 'Suspend Analyst' : 'Activate Analyst'}
+                                 className={`p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 ${
+                                   analyst.account_status === 'Active' 
+                                     ? 'text-muted-foreground hover:bg-red-500/10 hover:text-red-400' 
+                                     : 'text-green-400 hover:bg-green-500/10'
+                                 }`}
+                               >
+                                 {analyst.account_status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                               </button>
+
+                               {confirmDeleteId === analyst.user_id ? (
                                <div className="flex items-center gap-2 justify-end">
                                   <button onClick={() => handleDeleteAnalyst(analyst.user_id)} disabled={deletingId === analyst.user_id} className="text-accent hover:underline text-xs font-bold">YES</button>
                                   <button onClick={() => setConfirmDeleteId(null)} className="text-muted-foreground hover:underline text-xs">NO</button>
@@ -392,6 +433,7 @@ const ManagerProfile = () => {
                                 <Trash2 className="w-4 h-4" />
                                </button>
                              )}
+                             </div>
                           </td>
                         </tr>
                       ))

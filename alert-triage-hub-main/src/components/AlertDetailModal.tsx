@@ -222,10 +222,14 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
           {/* Actions for Junior Analyst */}
           {!isManager && alert.status === 'new' && (
             <div className="pt-4 border-t border-border mt-6">
-              <button onClick={() => {
-                claimAlert(alert.id, user!.id);
-                setShowDetails(false);
-              }} className="w-full justify-center inline-flex items-center gap-2 bg-[#00e57f] text-black px-6 py-4 rounded-xl text-md font-bold hover:bg-[#00db79] transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5">
+              <button 
+                onClick={async () => {
+                  await claimAlert(alert.id, user!.id);
+                  onClose();
+                  navigate('/dashboard'); // Redirect to dashboard to see the 'Claimed' view
+                }} 
+                className="w-full justify-center inline-flex items-center gap-2 bg-[#00e57f] text-black px-6 py-4 rounded-xl text-md font-bold hover:bg-[#00db79] transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5"
+              >
                 <Hand className="w-5 h-5" /> Claim Alert & Begin Investigation
               </button>
             </div>

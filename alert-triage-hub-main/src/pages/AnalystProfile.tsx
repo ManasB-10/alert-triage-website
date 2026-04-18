@@ -41,7 +41,8 @@ const AnalystProfile = () => {
       setStats(myPerf || { total_handled: 0, in_progress: 0, completed: 0, avg_ai_score: 0, avg_time: 0 });
 
       // 2. Fetch recent alerts handled by this analyst (Limited to 10 most recent)
-      const alertsRes = await fetch(`${API}/api/alerts?assigned_to_user_id=${user?.id}&status_in=closed,escalated&limit=10`);
+      // Fetch only closed alerts for the performance feed; escalated ones are moved to the dedicated section
+      const alertsRes = await fetch(`${API}/api/alerts?assigned_to_user_id=${user?.id}&status_in=closed&limit=10`);
       const myAlerts = await alertsRes.json();
       setRecentAlerts(Array.isArray(myAlerts) ? myAlerts : []);
     } catch (e) {
@@ -103,7 +104,7 @@ const AnalystProfile = () => {
           </div>
           <div className="flex gap-3">
             <div className="bg-secondary/30 px-6 py-3 rounded-xl border border-border flex flex-col items-center">
-              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Average AI Score</p>
+              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Average Score</p>
               <div className="flex items-center gap-2">
                 <Award className={`w-5 h-5 ${stats?.avg_ai_score >= 80 ? 'text-yellow-400' : 'text-primary'}`} />
                 <span className="text-2xl font-bold font-mono text-foreground">
@@ -211,8 +212,8 @@ const AnalystProfile = () => {
                         </p>
                       </div>
                       <div className={`px-4 py-2 rounded-xl text-center border ${(alert.ai_score ?? 0) >= 80 ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                          (alert.ai_score ?? 0) >= 50 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
-                            'bg-destructive/10 border-destructive/30 text-destructive'
+                        (alert.ai_score ?? 0) >= 50 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                          'bg-destructive/10 border-destructive/30 text-destructive'
                         }`}>
                         <p className="text-[10px] font-mono uppercase tracking-widest font-bold mb-0.5">Rating</p>
                         <p className="text-xl font-bold font-mono leading-none">{alert.ai_score ?? '--'}%</p>

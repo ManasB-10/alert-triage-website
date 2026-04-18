@@ -13,7 +13,7 @@ const CriticalAlerts = () => {
   const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
 
   const criticalAlerts = alerts
-    .filter(a => a.severity === 'critical')
+    .filter(a => a.severity === 'critical' && (isManager || a.status === 'new'))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (

@@ -36,7 +36,11 @@ const AlertTable = () => {
 
   const filtered = alerts
     .filter(a => filterSeverity === 'all' || a.severity === filterSeverity)
-    .filter(a => filterStatus === 'all' || a.status === filterStatus);
+    .filter(a => {
+      // Junior Analysts cannot see escalated alerts in the main Alerts table
+      if (!isManager && a.status === 'escalated') return false;
+      return filterStatus === 'all' || a.status === filterStatus;
+    });
 
   return (
     <>
@@ -66,7 +70,7 @@ const AlertTable = () => {
             <option value="claimed">Claimed</option>
             <option value="investigating">Investigating</option>
             <option value="closed">Closed</option>
-            <option value="escalated">Escalated</option>
+            {isManager && <option value="escalated">Escalated</option>}
           </select>
         </div>
 

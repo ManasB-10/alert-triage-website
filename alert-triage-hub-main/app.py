@@ -33,12 +33,13 @@ def get_alerts():
 
     query = """
         SELECT a.id, a.source_ip, a.dest_ip, a.event_type, a.severity, a.status, 
-               a.assigned_analyst_id, a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
+               a.assigned_analyst_id, u.full_name as assigned_analyst_name, a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
                asst.asset_name, asst.asset_type, asst.criticality_score, asst.location as asset_location,
                t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as closed_at, t.assigned_to_user_id
         FROM alerts a
         LEFT JOIN assets asst ON a.asset_id = asst.asset_id
         LEFT JOIN tickets t ON a.id = t.alert_id
+        LEFT JOIN users u ON a.assigned_analyst_id = u.user_id
     """
     conditions = []
     params = []
@@ -402,6 +403,10 @@ def login():
         user = cursor.fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
+            # Check if user account is suspended
+            if user.get('account_status') == 'Suspended':
+                return jsonify({"message": "Your account has been suspended. Please contact your manager."}), 403
+
             user_info = {
                 "id": str(user['user_id']),
                 "name": user['full_name'],
@@ -576,9 +581,12 @@ def get_analysts():
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
-            SELECT user_id, username, full_name, email, account_status, created_at
-            FROM users WHERE role = 'Junior_Analyst'
-            ORDER BY created_at DESC
+            SELECT u.user_id, u.username, u.full_name, u.email, u.account_status, u.created_at,
+                   COALESCE(p.average_ai_score, 0) as avg_ai_score
+            FROM users u
+            LEFT JOIN analyst_performance p ON u.user_id = p.user_id
+            WHERE u.role = 'Junior_Analyst'
+            ORDER BY u.created_at DESC
         """)
         rows = cursor.fetchall()
         for row in rows:
@@ -642,6 +650,35 @@ def delete_analyst(user_id):
         if cursor.rowcount == 0:
             return jsonify({'message': 'Analyst not found or not a Junior Analyst'}), 404
         return jsonify({'message': 'Analyst removed successfully'}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-7: Toggle Analyst Status (Active/Suspended)
+@app.route('/api/manager/analysts/<int:user_id>/toggle-status', methods=['POST'])
+def toggle_analyst_status(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get current status
+        cursor.execute("SELECT account_status FROM users WHERE user_id = %s AND role = 'Junior_Analyst'", (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'message': 'Analyst not found'}), 404
+            
+        new_status = 'Suspended' if user['account_status'] == 'Active' else 'Active'
+        
+        cursor.execute("UPDATE users SET account_status = %s WHERE user_id = %s", (new_status, user_id))
+        conn.commit()
+        
+        return jsonify({
+            'message': f'Analyst status updated to {new_status}',
+            'new_status': new_status
+        }), 200
     except Exception as e:
         return jsonify({'message': str(e)}), 500
     finally:

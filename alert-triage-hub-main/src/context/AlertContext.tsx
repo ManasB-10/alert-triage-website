@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { toast } from 'sonner';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type AlertStatus = 'new' | 'claimed' | 'investigating' | 'closed' | 'escalated';
@@ -43,6 +44,7 @@ interface AlertContextType {
   activeFilter: AlertStatus | null;
   selectedAlertId: string | null;
   setSelectedAlertId: (id: string | null) => void;
+  refreshAlerts: () => Promise<void>;
 }
 
 const MOCK_ALERTS: SecurityAlert[] = [
@@ -181,14 +183,20 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   const claimAlert = async (id: string, userId: string) => {
     const rawId = parseInt(id.replace('ALT-', ''), 10);
     try {
-      await fetch('http://localhost:5000/api/claim-alert', {
+      const res = await fetch('http://localhost:5000/api/claim-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alert_id: rawId, user_id: parseInt(userId, 10) })
       });
+      
+      if (!res.ok) throw new Error('Claim failed');
+      
+      toast.success('Alert claimed successfully! It is now in your claimed section.');
+      setActiveFilter('claimed');
       await loadAlerts();
     } catch (err) {
       console.error("Error claiming alert:", err);
+      toast.error('Failed to claim alert');
     }
   };
 
@@ -236,7 +244,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     <AlertContext.Provider value={{
       alerts, addAlert, updateAlert, deleteAlert, claimAlert, investigateAlert,
       closeAlert, addNote, saveInvestigationDetails, setFilter, activeFilter,
-      selectedAlertId, setSelectedAlertId
+      selectedAlertId, setSelectedAlertId, refreshAlerts: loadAlerts
     }}>
       {children}
     </AlertContext.Provider>

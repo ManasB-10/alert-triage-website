@@ -6,23 +6,33 @@ import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from '@/components/SeverityBadge';
 import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
-import { Clock, Activity, Hand, ShieldPlus } from 'lucide-react';
+import { Clock, Activity, Hand, ShieldPlus, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
 const Dashboard = () => {
-  const { alerts, activeFilter, claimAlert, setFilter } = useAlerts();
+  const { alerts, activeFilter, claimAlert, setFilter, refreshAlerts } = useAlerts();
   const { user } = useAuth();
   const isManager = user?.role === 'soc_manager';
   const navigate = useNavigate();
   const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
 
   const displayedAlerts = [...alerts]
-    .filter(a => activeFilter ? a.status === activeFilter : true)
+    .filter(a => {
+      // By default, only show 'new' alerts in the recent list
+      if (!activeFilter && a.status !== 'new') return false;
+      // Junior analysts should only see escalated alerts in the dedicated Escalated section
+      if (!isManager && a.status === 'escalated') return false;
+      if (activeFilter) return a.status === activeFilter;
+      return true;
+    })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, activeFilter ? undefined : 5); // Show all if filtered, else top 5
 
-  const criticalCount = alerts.filter(a => a.severity === 'critical' && a.status !== 'closed').length;
+  const criticalCount = alerts.filter(a => 
+    a.severity === 'critical' && 
+    (isManager ? a.status !== 'closed' : a.status === 'new')
+  ).length;
 
   return (
     <DashboardLayout>
@@ -37,15 +47,25 @@ const Dashboard = () => {
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          {criticalCount > 0 && (
+          <div className="flex items-center gap-3">
             <button 
-              onClick={() => navigate('/critical')}
-              className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2 glow-danger hover:bg-destructive/20 transition-colors cursor-pointer"
+              onClick={() => refreshAlerts()}
+              className="flex items-center gap-2 bg-secondary border border-border rounded-lg px-4 py-2 hover:bg-secondary/80 transition-all active:scale-[0.98] group"
+              title="Refresh Alerts"
             >
-              <Activity className="w-4 h-4 text-destructive animate-pulse-glow" />
-              <span className="text-sm font-mono text-destructive font-bold">{criticalCount} CRITICAL</span>
+              <RotateCcw className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:rotate-180 transition-all duration-500" />
+              <span className="text-sm font-mono text-foreground font-medium">REFRESH</span>
             </button>
-          )}
+            {criticalCount > 0 && (
+              <button 
+                onClick={() => navigate('/critical')}
+                className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2 glow-danger hover:bg-destructive/20 transition-colors cursor-pointer"
+              >
+                <Activity className="w-4 h-4 text-destructive animate-pulse-glow" />
+                <span className="text-sm font-mono text-destructive font-bold">{criticalCount} CRITICAL</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <StatsCards />
