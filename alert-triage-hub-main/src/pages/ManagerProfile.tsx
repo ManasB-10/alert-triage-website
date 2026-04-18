@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
-import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings, UserCheck, UserX } from 'lucide-react';
+import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings, UserCheck, UserX, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = 'http://localhost:5000';
@@ -27,6 +27,7 @@ const ManagerProfile = () => {
     tags: '',
     detection_source: 'EDR',
     severity: 'medium',
+    useCurrentTime: true
   });
 
   // Add Analyst modal state
@@ -43,6 +44,9 @@ const ManagerProfile = () => {
   // Delete analyst state
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  // Search state
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -97,23 +101,79 @@ const ManagerProfile = () => {
     }
   };
 
+  const isPrivateIP = (ip: string) => {
+    const parts = ip.split('.').map(p => parseInt(p, 10));
+    if (parts.length !== 4 || parts.some(isNaN)) return false;
+    if (parts[0] === 10) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    return false;
+  };
+
   const handleCreateAlert = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createForm.event_type || !createForm.source_ip || !createForm.dest_ip) {
-      toast.error('Please fill all mandatory fields');
+    
+    // IP Validation
+    if (!isPrivateIP(createForm.source_ip)) {
+      toast.error('Source IP must be a Private IP address (10.x, 172.16-31.x, or 192.168.x)');
+      return;
+    }
+    if (!isPrivateIP(createForm.dest_ip)) {
+      toast.error('Destination IP must be a Private IP address (10.x, 172.16-31.x, or 192.168.x)');
+      return;
+    }
+
+    // Word Count Validation
+    const wordCount = createForm.description.trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount < 10) {
+      toast.error('Context is too short. Please provide at least 10 words for a professional report.');
+      return;
+    }
+    if (wordCount > 200) {
+      toast.error('Context exceeds the 200 word limit.');
+      return;
+    }
+
+    // Trigger Time Validation (Must not be in the future)
+    // We check this AFTER preparing the payload to ensure even 'Current Time' is within bounds
+    const finalTriggerTime = createForm.useCurrentTime 
+      ? new Date().getTime() 
+      : new Date(createForm.trigger_time).getTime();
+    
+    const now = new Date().getTime();
+    
+    // Allow 5 second grace period for processing lag
+    if (finalTriggerTime > now + 5000) {
+      toast.error('Trigger Time cannot be in the future');
+      return;
+    }
+
+    if (!createForm.event_type || !createForm.tags || !createForm.detection_source) {
+      toast.error('Please fill all mandatory fields including Tags and Detection Source');
       return;
     }
 
     setCreatingAlert(true);
     try {
+      // Helper to get local date/time for MySQL (YYYY-MM-DD HH:mm:ss)
+      const getLocalISO = () => {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      };
+
+      const payload = {
+        ...createForm,
+        trigger_time: createForm.useCurrentTime 
+          ? getLocalISO()
+          : createForm.trigger_time.replace('T', ' '),
+        created_by: user?.id
+      };
+
       const res = await fetch(`${API}/api/manager/create-alert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...createForm,
-          trigger_time: createForm.trigger_time || new Date().toISOString().slice(0, 19).replace('T', ' '),
-          created_by: user?.id
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
@@ -128,6 +188,7 @@ const ManagerProfile = () => {
         tags: '',
         detection_source: 'EDR',
         severity: 'medium',
+        useCurrentTime: true
       });
     } catch (e: any) {
       toast.error(e.message || 'Failed to create alert');
@@ -190,6 +251,12 @@ const ManagerProfile = () => {
       setConfirmDeleteId(null);
     }
   };
+
+  const filteredAnalysts = analysts.filter(a => 
+    a.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <DashboardLayout>
@@ -308,13 +375,89 @@ const ManagerProfile = () => {
                     <option value="low">Low</option>
                   </select>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest ml-1">Detection Source</label>
+                    <select 
+                      value={createForm.detection_source}
+                      onChange={e => setCreateForm(f => ({ ...f, detection_source: e.target.value }))}
+                      className="w-full bg-secondary/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:ring-1 focus:ring-accent outline-none"
+                      required
+                    >
+                      <option value="EDR">EDR (SentinelOne)</option>
+                      <option value="SIEM">SIEM (Splunk)</option>
+                      <option value="Firewall">Firewall (PaloAlto)</option>
+                      <option value="IDS/IPS">IDS/IPS (Snort)</option>
+                      <option value="Email">Email Security (Mimecast)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest ml-1">Tags</label>
+                    <input 
+                      placeholder="malware, lateral, hq-1"
+                      value={createForm.tags}
+                      onChange={e => setCreateForm(f => ({ ...f, tags: e.target.value }))}
+                      className="w-full bg-secondary/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-accent outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest ml-1">Context</label>
+                  <div className="flex items-center justify-between ml-1">
+                    <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Trigger Time</label>
+                    <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setCreateForm(f => ({ ...f, useCurrentTime: !f.useCurrentTime }))}>
+                      <input 
+                        type="checkbox" 
+                        checked={createForm.useCurrentTime}
+                        readOnly
+                        className="w-3 h-3 accent-accent cursor-pointer"
+                      />
+                      <span className="text-[9px] font-mono text-muted-foreground group-hover:text-accent transition-colors">CURRENT TIME</span>
+                    </div>
+                  </div>
+                  {!createForm.useCurrentTime ? (
+                    <input 
+                      type="datetime-local"
+                      value={createForm.trigger_time}
+                      max={(() => {
+                        const now = new Date();
+                        const year = now.getFullYear();
+                        const month = String(now.getMonth() + 1).padStart(2, '0');
+                        const day = String(now.getDate()).padStart(2, '0');
+                        const hours = String(now.getHours()).padStart(2, '0');
+                        const minutes = String(now.getMinutes()).padStart(2, '0');
+                        return `${year}-${month}-${day}T${hours}:${minutes}`;
+                      })()}
+                      onChange={e => setCreateForm(f => ({ ...f, trigger_time: e.target.value }))}
+                      className="w-full bg-secondary/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:ring-1 focus:ring-accent outline-none animate-in slide-in-from-top-1 duration-200"
+                      required
+                    />
+                  ) : (
+                    <div className="w-full bg-secondary/10 border border-border/50 rounded-lg px-3 py-2 text-xs text-muted-foreground italic font-mono flex items-center gap-2">
+                       <Activity className="w-3 h-3" />
+                       Real-time capture active
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between ml-1">
+                    <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Context</label>
+                    <span className={`text-[9px] font-mono ${
+                      createForm.description.trim().split(/\s+/).filter(Boolean).length < 10 
+                      ? 'text-red-400' 
+                      : 'text-green-400'
+                    }`}>
+                      {createForm.description.trim().split(/\s+/).filter(Boolean).length}/10 WORDS MIN
+                    </span>
+                  </div>
                    <textarea 
                     value={createForm.description}
                     onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
                     className="w-full bg-secondary/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-accent outline-none min-h-[80px]"
-                    placeholder="Brief description..."
+                    placeholder="Provide a detailed incident description (min 10 words)..."
+                    required
                   />
                 </div>
                 <button 
@@ -342,13 +485,24 @@ const ManagerProfile = () => {
                   <p className="text-xs text-muted-foreground font-mono">Registered Junior Triage Analysts</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowAddModal(true)}
-                className="bg-accent text-black font-bold text-xs px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-accent/90 transition-all shadow-lg shadow-accent/10"
-              >
-                <UserPlus className="w-4 h-4" />
-                Recruit Analyst
-              </button>
+              <div className="flex items-center gap-4">
+                <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-accent transition-colors" />
+                  <input 
+                    placeholder="Search personnel..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="bg-secondary/40 border border-border rounded-lg pl-9 pr-4 py-2 text-xs text-foreground focus:ring-1 focus:ring-accent outline-none w-48 lg:w-64 transition-all"
+                  />
+                </div>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="bg-accent text-black font-bold text-xs px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-accent/90 transition-all shadow-lg shadow-accent/10"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Recruit Analyst
+                </button>
+              </div>
             </div>
 
             <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
@@ -370,8 +524,14 @@ const ManagerProfile = () => {
                           </td>
                         </tr>
                       ))
+                    ) : filteredAnalysts.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground italic font-mono text-xs">
+                          No personnel matching "{searchTerm}" found.
+                        </td>
+                      </tr>
                     ) : (
-                      analysts.map(analyst => (
+                      filteredAnalysts.map(analyst => (
                         <tr key={analyst.user_id} className="border-b border-border/50 hover:bg-secondary/10 transition-colors group">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">

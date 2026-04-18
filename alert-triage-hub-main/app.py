@@ -3,7 +3,7 @@ from flask_cors import CORS
 import mysql.connector
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -686,6 +686,21 @@ def toggle_analyst_status(user_id):
         conn.close()
 
 
+# M-6: Helper for Private IP Validation
+def is_private_ip(ip):
+    try:
+        parts = [int(p) for p in ip.split('.')]
+        if len(parts) != 4: return False
+        # 10.0.0.0/8
+        if parts[0] == 10: return True
+        # 172.16.0.0/12
+        if parts[0] == 172 and 16 <= parts[1] <= 31: return True
+        # 192.168.0.0/16
+        if parts[0] == 192 and parts[1] == 168: return True
+        return False
+    except:
+        return False
+
 # M-6: Manager creates an alert manually
 # M-6: Manager creates an alert manually
 @app.route('/api/manager/create-alert', methods=['POST'])
@@ -711,19 +726,38 @@ def create_alert():
     if severity not in valid_severities:
         return jsonify({'message': f'severity must be one of {valid_severities}'}), 400
 
-    # IP Validation
-    ip_pattern = re.compile(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$")
-    if not ip_pattern.match(source_ip):
-        return jsonify({'message': 'Invalid Source IP format'}), 400
-    if not ip_pattern.match(dest_ip):
-        return jsonify({'message': 'Invalid Destination IP format'}), 400
+    # IP Validation (Private Only)
+    if not is_private_ip(source_ip):
+        return jsonify({'message': 'Source IP must be a Private IP address (10.x, 172.16-31.x, 192.168.x)'}), 400
+    if not is_private_ip(dest_ip):
+        return jsonify({'message': 'Destination IP must be a Private IP address (10.x, 172.16-31.x, 192.168.x)'}), 400
 
-    # Description Validation (max 200 words)
-    if len(description.split()) > 200:
+    # Description Validation (Min 10, max 200 words)
+    word_count = len(description.split())
+    if word_count < 10:
+        return jsonify({'message': 'Context must be at least 10 words long for professional reporting'}), 400
+    if word_count > 200:
         return jsonify({'message': 'Description exceeds the 200 words limit'}), 400
 
     if not trigger_time:
         trigger_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        # Ensure trigger_time is not in the future (with 5-second grace period)
+        try:
+            # Handle both YYYY-MM-DD HH:mm:ss and YYYY-MM-DD HH:mm
+            if ' ' in trigger_time:
+                fmt = '%Y-%m-%d %H:%M:%S' if len(trigger_time.split(':')) == 3 else '%Y-%m-%d %H:%M'
+                t_time = datetime.strptime(trigger_time, fmt)
+            else:
+                t_time = datetime.fromisoformat(trigger_time.replace('Z', ''))
+            
+            # Allow 5 sec grace period for clock drift
+            if t_time > datetime.now() + timedelta(seconds=5):
+                return jsonify({'message': f'Trigger Time ({trigger_time}) cannot be in the future'}), 400
+        except Exception as e:
+            # If parsing fails, we log it but let the DB try to handle it (or it will fail on insert)
+            print(f"Time parsing error: {e}")
+            pass
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -742,6 +776,51 @@ def create_alert():
         return jsonify({'message': 'Alert created successfully', 'alert_id': cursor.lastrowid}), 201
     except Exception as e:
         return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/api/manager/unclaim-alert', methods=['POST'])
+def unclaim_alert():
+    data = request.json
+    alert_id = data.get('alert_id')
+
+    if not alert_id:
+        return jsonify({"message": "Alert ID is required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # 1. Verify alert is currently claimed
+        cursor.execute("SELECT status, assigned_analyst_id FROM alerts WHERE id = %s", (alert_id,))
+        alert = cursor.fetchone()
+        
+        if not alert:
+            return jsonify({"message": "Alert not found"}), 404
+        if alert['status'] != 'claimed':
+            return jsonify({"message": "Only claimed alerts can be returned to new"}), 400
+
+        analyst_id = alert['assigned_analyst_id']
+
+        # 2. Reset Alert
+        cursor.execute(
+            "UPDATE alerts SET status = 'new', assigned_analyst_id = NULL WHERE id = %s", 
+            (alert_id,)
+        )
+        
+        # 3. Delete Ticket
+        cursor.execute("DELETE FROM tickets WHERE alert_id = %s", (alert_id,))
+        
+        conn.commit()
+
+        # 4. Sync Analyst Performance (since their active workload changed)
+        if analyst_id:
+            sync_analyst_performance(conn, analyst_id)
+
+        return jsonify({"message": "Alert successfully returned to new pool"}), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
     finally:
         cursor.close()
         conn.close()

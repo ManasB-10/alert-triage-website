@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   User, Loader2, RefreshCw, ShieldAlert, TrendingUp, Trash2, X, Eye, EyeOff,
-  BarChart2, Users, AlertTriangle, Activity,
+  BarChart2, Users, AlertTriangle, Activity, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import SeverityBadge from '@/components/SeverityBadge';
@@ -89,6 +89,7 @@ const ManagerDashboard: React.FC = () => {
   const [modalLoading, setModalLoading] = useState(false);
   const [confirmDeleteModalAlertId, setConfirmDeleteModalAlertId] = useState<number | null>(null);
   const [deletingModalAlertId, setDeletingModalAlertId] = useState<number | null>(null);
+  const [unclaimingId, setUnclaimingId] = useState<number | null>(null);
 
   const handleDeleteModalAlert = async (alertId: number) => {
     setDeletingModalAlertId(alertId);
@@ -121,6 +122,25 @@ const ManagerDashboard: React.FC = () => {
       toast.error('Failed to load card data');
     } finally {
       setModalLoading(false);
+    }
+  };
+  const handleUnclaimAlert = async (alertId: number) => {
+    setUnclaimingId(alertId);
+    try {
+      const res = await fetch(`${API}/api/manager/unclaim-alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alert_id: alertId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      
+      toast.success('Alert returned to new pool');
+      fetchAll();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to unclaim alert');
+    } finally {
+      setUnclaimingId(null);
     }
   };
 
@@ -446,9 +466,25 @@ const ManagerDashboard: React.FC = () => {
                           <SeverityBadge severity={alert.severity} />
                           <span className="flex-1 truncate text-sm text-foreground">{alert.event}</span>
                           <StatusBadge status={alert.status} />
-                          <span className="text-xs text-muted-foreground font-mono shrink-0">
-                            {alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground font-mono shrink-0">
+                              {alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '—'}
+                            </span>
+                            {alert.status === 'claimed' && (
+                              <button
+                                onClick={() => handleUnclaimAlert(alert.id)}
+                                disabled={unclaimingId === alert.id}
+                                title="Return to New Alerts"
+                                className="p-1.5 rounded-md hover:bg-accent/10 text-muted-foreground hover:text-accent transition-all active:scale-90 disabled:opacity-50"
+                              >
+                                {unclaimingId === alert.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
