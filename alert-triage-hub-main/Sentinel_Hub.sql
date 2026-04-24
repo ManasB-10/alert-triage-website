@@ -43,14 +43,24 @@ CREATE TABLE alerts (
 );
 
 -- 5. Table: Tickets (Incident Investigation Workflow)
+-- NOTE: assigned_to_user_id does NOT have a FK constraint here.
+-- Reason: Adding one would create a circular dependency:
+--   USERS → ALERTS (assigned_analyst_id FK)
+--   ALERTS → TICKETS (alert_id FK)
+--   TICKETS → USERS (assigned_to_user_id FK) ← closes the loop
+-- Circular FKs cause issues with INSERT ordering, DELETE cascades, and InnoDB.
+-- Referential integrity for assigned_to_user_id is enforced at the application
+-- layer (app.py always copies the value from alerts.assigned_analyst_id).
 CREATE TABLE tickets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     alert_id INT,
-    assigned_to_user_id INT, -- Better to link to User ID than just a name string
+    assigned_to_user_id INT, -- Tracks who worked this ticket (app-enforced, no FK to avoid circular dependency)
     resolution_notes TEXT,
+    ai_score INT DEFAULT 0,
+    ai_reasoning TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE,
-    FOREIGN KEY (assigned_to_user_id) REFERENCES users(user_id)
+    FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE
+    -- No FK on assigned_to_user_id intentionally — see note above
 );
 
 -- 6. Table: Threat Intelligence (External Feed Data)
