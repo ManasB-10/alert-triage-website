@@ -3,10 +3,17 @@ import { ShieldPlus, UserCheck, Crown, ArrowLeft, Loader2, Eye, EyeOff } from 'l
 import { useAuth, UserRole } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useEffect } from 'react';
 
 const Login = () => {
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      navigate(user.role === 'soc_manager' ? '/manager' : '/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [isLoginView, setIsLoginView] = useState(true);
@@ -166,8 +173,8 @@ const Login = () => {
           toast.success(data.message);
           setIsVerifiedForReset(true);
           setFormErrors({});
-        } catch (error: any) {
-          toast.error(error.message);
+        } catch (error: unknown) {
+          toast.error(error instanceof Error ? error.message : 'An error occurred');
         } finally {
           setIsLoading(false);
         }
@@ -197,8 +204,8 @@ const Login = () => {
           setPassword('');
           setConfirmPassword('');
           setFormErrors({});
-        } catch (error: any) {
-          toast.error(error.message);
+        } catch (error: unknown) {
+          toast.error(error instanceof Error ? error.message : 'Reset failed');
         } finally {
           setIsLoading(false);
         }
@@ -214,9 +221,34 @@ const Login = () => {
     }
 
     setIsLoading(true);
+
+    // Security Check: Check if another tab is already active with this role
+    const channel = new BroadcastChannel('sentinel_security_sync');
+    let isAlreadyActive = false;
+    
+    const checkTimeout = new Promise<void>((resolve) => {
+      channel.onmessage = (event) => {
+        if (event.data.type === 'PONG_ROLE' && event.data.role === selectedRole) {
+          isAlreadyActive = true;
+          resolve();
+        }
+      };
+      channel.postMessage({ type: 'PING_ROLE', role: selectedRole });
+      setTimeout(resolve, 250); // Wait 250ms for responses
+    });
+
+    await checkTimeout;
+    channel.close();
+
+    if (isAlreadyActive) {
+      toast.error("SECURITY ALERT: This account role is already in use in another active session/tab. Please close the other session first.");
+      setIsLoading(false);
+      return;
+    }
+
     const endpoint = isLoginView ? '/api/login' : '/api/signup';
 
-    const payload: any = {
+    const payload: Record<string, string> = {
       email: email.trim(),
       password,
       role: selectedRole
@@ -252,8 +284,8 @@ const Login = () => {
 
       navigate(data.user.role === 'soc_manager' ? '/manager' : '/dashboard');
 
-    } catch (error: any) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Authentication failed');
     } finally {
       setIsLoading(false);
     }

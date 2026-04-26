@@ -9,7 +9,7 @@ const API = 'http://localhost:5000';
 const AnalystProfile = () => {
   const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<any | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
   const [fetchingData, setFetchingData] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,6 +26,7 @@ const AnalystProfile = () => {
       });
       fetchAnalystData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const fetchAnalystData = async () => {
@@ -36,7 +37,7 @@ const AnalystProfile = () => {
       const perfData = await perfRes.json();
       console.log("Full Performance Data from Server:", perfData);
 
-      const myPerf = Array.isArray(perfData) ? perfData.find((a: any) => String(a.user_id) === String(user?.id)) : null;
+      const myPerf = Array.isArray(perfData) ? perfData.find((a: Record<string, unknown>) => String(a.user_id) === String(user?.id)) : null;
       console.log("My Statistics Found for User ID", user?.id, ":", myPerf);
 
       setStats(myPerf || { total_handled: 0, in_progress: 0, completed: 0, avg_ai_score: 0, avg_time: 0 });
@@ -76,8 +77,8 @@ const AnalystProfile = () => {
 
       updateUser({ name: formData.name, email: formData.email });
       toast.success('Profile updated successfully');
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to update profile');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update profile');
     } finally {
       setLoading(false);
     }

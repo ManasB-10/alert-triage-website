@@ -7,7 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
-const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const SOURCES: AlertSource[] = ['Vulnerability Scanner', 'IDS/IPS', 'SIEM', 'EDR', 'Firewall', 'Email Gateway', 'WAF'];
 const STATUSES: AlertStatus[] = ['new', 'claimed', 'investigating', 'closed'];
 
@@ -28,7 +28,7 @@ const AlertFormModal = ({ alert, onClose }: Props) => {
     if (isEdit) {
       updateAlert(alert!.id, { title, description, severity, source, sourceIp, destIp, status });
     } else {
-      addAlert({ title, description, severity, source, sourceIp, destIp });
+      addAlert({ title, description, severity, source, sourceIp, destIp, tags: '' });
     }
     onClose();
   };

@@ -1,21 +1,40 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import StatsCards from '@/components/StatsCards';
 import AlertsChart from '@/components/AlertsChart';
-import { useAlerts } from '@/context/AlertContext';
+import { useAlerts, SecurityAlert } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from '@/components/SeverityBadge';
 import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
 import { Clock, Activity, Hand, ShieldPlus, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { type AlertStatus } from '@/context/AlertContext';
 
 const Dashboard = () => {
   const { alerts, activeFilter, claimAlert, setFilter, refreshAlerts } = useAlerts();
   const { user } = useAuth();
   const isManager = user?.role === 'soc_manager';
   const navigate = useNavigate();
-  const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
+  const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
+  const [flashedStatus, setFlashedStatus] = useState<AlertStatus | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Per-status panel glow styles (temporary flash)
+  const panelGlowMap: Record<string, string> = {
+    new:           'border-destructive/70 shadow-[0_0_28px_6px_rgba(239,68,68,0.45)]',
+    claimed:       'border-warning/70 shadow-[0_0_28px_6px_rgba(234,179,8,0.45)]',
+    investigating: 'border-info/70 shadow-[0_0_28px_6px_rgba(59,130,246,0.45)]',
+    closed:        'border-success/70 shadow-[0_0_28px_6px_rgba(34,197,94,0.45)]',
+  };
+
+  const handleFilterClick = (status: AlertStatus) => {
+    setFilter(status);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    setFlashedStatus(status);
+    flashTimer.current = setTimeout(() => setFlashedStatus(null), 700);
+  };
+
 
   const displayedAlerts = [...alerts]
     .filter(a => {
@@ -28,6 +47,24 @@ const Dashboard = () => {
     })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, activeFilter ? undefined : 5); // Show all if filtered, else top 5
+
+  const getAgeText = (timestamp: string) => {
+    const diffMs = new Date().getTime() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    let text = '';
+    if (minutes < 60) {
+      text = `${Math.max(1, minutes)} Minute${minutes !== 1 ? 's' : ''} Ago`;
+    } else if (hours < 24) {
+      text = `${hours} Hour${hours !== 1 ? 's' : ''} Ago`;
+    } else {
+      text = `${days} Day${days !== 1 ? 's' : ''} Ago`;
+    }
+
+    return <span className="ml-2 text-[10px] text-muted-foreground font-mono">{text}</span>;
+  };
 
   const criticalCount = alerts.filter(a => 
     a.severity === 'critical' && 
@@ -68,11 +105,13 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <StatsCards />
+        <StatsCards onFilterClick={handleFilterClick} />
         <AlertsChart />
 
-        {/* Recent Alerts */}
-        <div className="rounded-lg border border-border bg-card p-5">
+        {/* Recent / Filtered Alerts Panel */}
+        <div className={`rounded-lg border bg-card p-5 transition-all duration-300 ${
+          flashedStatus ? panelGlowMap[flashedStatus] : 'border-border'
+        }`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-muted-foreground" />
@@ -115,9 +154,12 @@ const Dashboard = () => {
                   )}
                 </div>
                 <StatusBadge status={alert.status} />
-                <span className="text-xs text-muted-foreground font-mono">
-                  {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {getAgeText(alert.timestamp)}
+                </div>
                 
                 {/* Claim Button */}
                 {!isManager && alert.status === 'new' && (

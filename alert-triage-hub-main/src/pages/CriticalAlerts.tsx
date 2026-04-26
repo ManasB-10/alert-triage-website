@@ -1,7 +1,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
-import { useAlerts } from '@/context/AlertContext';
+import { useAlerts, SecurityAlert } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
 import { AlertOctagon, Hand, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -10,7 +10,7 @@ const CriticalAlerts = () => {
   const { alerts, claimAlert } = useAlerts();
   const { user } = useAuth();
   const isManager = user?.role === 'soc_manager';
-  const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
+  const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
 
   const criticalAlerts = alerts
     .filter(a => a.severity === 'critical' && (isManager || a.status === 'new'))

@@ -25,7 +25,7 @@ export interface SecurityAlert {
   assetType?: string;
   assetCriticality?: number;
   assetLocation?: string;
-  resolutionNotes?: any;
+  resolutionNotes?: Record<string, any>;
   assigned_to_user_id?: number | string | null;
   detection_source?: string;
 }
@@ -38,7 +38,7 @@ interface AlertContextType {
   claimAlert: (id: string, userId: string) => void;
   closeAlert: (id: string) => void;
   addNote: (id: string, note: string) => void;
-  saveInvestigationDetails: (id: string, notes: any, status?: string, severity?: string) => Promise<void>;
+  saveInvestigationDetails: (id: string, notes: unknown, status?: string, severity?: string) => Promise<void>;
   investigateAlert: (id: string) => Promise<void>;
   setFilter: (status: AlertStatus | null) => void;
   activeFilter: AlertStatus | null;
@@ -103,8 +103,8 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     try {
       // Pass the current user ID to enforce visibility rules (New alerts vs My history)
       const url = user?.id 
-        ? `${API}/api/alerts?viewing_user_id=${user.id}` 
-        : `${API}/api/alerts`;
+        ? `${API}/api/alerts?viewing_user_id=${user.id}&per_page=1000` 
+        : `${API}/api/alerts?per_page=1000`;
         
       const res = await fetch(url);
       const data = await res.json();
@@ -120,7 +120,9 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         return 'SIEM';
       };
 
-      const mapped = data.map((d: any) => {
+      const alertArray = Array.isArray(data) ? data : (data.alerts || []);
+
+      const mapped = alertArray.map((d: Record<string, unknown>) => {
         let parsedNotes = null;
         if (d.resolution_notes) {
           if (typeof d.resolution_notes === 'string') {
@@ -137,17 +139,17 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         return {
         id: `ALT-${String(d.id).padStart(3, '0')}`,
         rawId: d.id,
-        title: d.event_type,
-        description: d.description || 'Auto-generated alert via Sentinel Hub.',
-        severity: d.severity,
-        status: d.status,
-        source: getSource(d.event_type),
+        title: (d.event_type as string),
+        description: (d.description as string) || 'Auto-generated alert via Sentinel Hub.',
+        severity: d.severity as Severity,
+        status: d.status as AlertStatus,
+        source: getSource(d.event_type as string),
         sourceIp: d.source_ip,
         destIp: d.dest_ip,
         timestamp: d.trigger_time || d.created_at,
         tags: d.tags || '',
         claimedBy: d.assigned_analyst_name || d.claimed_by, // handle different join scenarios
-        notes: d.notes ? d.notes.split('|') : [],
+        notes: d.notes ? (d.notes as string).split('|') : [],
         resolutionNotes: parsedNotes,
         assetName: d.asset_name,
         assetType: d.asset_type,
@@ -165,6 +167,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     loadAlerts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter, user?.id]); // Refresh if filter or user changes
 
   const addAlert = (alert: Omit<SecurityAlert, 'id' | 'timestamp' | 'status' | 'notes'>) => {
@@ -226,7 +229,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     setActiveFilter(status);
   };
 
-  const saveInvestigationDetails = async (id: string, notes: any, status?: string, severity?: string) => {
+  const saveInvestigationDetails = async (id: string, notes: unknown, status?: string, severity?: string) => {
     const rawId = parseInt(id.replace('ALT-', ''), 10);
     try {
       await fetch(`http://localhost:5000/api/alerts/${rawId}/resolution`, {
@@ -251,6 +254,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAlerts() {
   const ctx = useContext(AlertContext);
   if (!ctx) throw new Error('useAlerts must be used within AlertProvider');

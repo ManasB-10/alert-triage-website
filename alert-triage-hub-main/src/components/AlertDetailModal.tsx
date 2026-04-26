@@ -49,14 +49,14 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
         severity: alert.resolutionNotes.severity || alert.severity || '',
       });
     }
-  }, [alert.resolutionNotes, alert.id]); // Tie to ID as well to ensure it resets when switching alerts
+  }, [alert.resolutionNotes, alert.id, alert.severity]); // Tie to ID as well to ensure it resets when switching alerts
 
   const handleChange = (field: string, value: string) => {
     if (alert.status === 'closed') return;
     setInvData(prev => ({ ...prev, [field]: value }));
   };
 
-  const isEditable = alert.status === 'investigating';
+  const isEditable = !isManager && alert.status === 'investigating';
 
   const mustEscalate = ['critical', 'high'].includes(invData.severity) || invData.resolution === 'True Positive';
 
@@ -67,15 +67,17 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
     }
   }, [mustEscalate, invData.l2Escalation]);
 
+  const MIN_LEN = 8;
+
   const isFormComplete = Boolean(
     invData.severity &&
-    invData.who.trim() && 
-    invData.what.trim() && 
-    invData.when.trim() &&
-    invData.where.trim() && 
-    invData.why.trim() && 
+    invData.who.trim().length >= MIN_LEN &&
+    invData.what.trim().length >= MIN_LEN &&
+    invData.when.trim().length >= MIN_LEN &&
+    invData.where.trim().length >= MIN_LEN &&
+    invData.why.trim().length >= MIN_LEN &&
     (invData.l2Escalation || mustEscalate) &&
-    invData.l2Reason.trim() &&
+    invData.l2Reason.trim().length >= MIN_LEN &&
     invData.resolution
   );
 
@@ -119,9 +121,21 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
 
   const handleEscalate = async () => {
     if (isFormComplete) {
-      await saveInvestigationDetails(alert.id, invData, 'escalated', invData.severity);
-      toast.success("Alert successfully escalated to L2 team.");
-      onClose();
+      toast('Confirm Escalation', {
+        description: 'Are you sure you want to escalate this alert to the L2 team?',
+        action: {
+          label: 'Yes, Escalate',
+          onClick: async () => {
+            await saveInvestigationDetails(alert.id, invData, 'escalated', invData.severity);
+            toast.success("Alert successfully escalated to L2 team.");
+            onClose();
+          }
+        },
+        cancel: {
+          label: 'Cancel',
+          onClick: () => {}
+        }
+      });
     } else {
       toast.error("Please complete all required fields (*) before escalating.");
     }
@@ -303,8 +317,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.who} onChange={(e) => handleChange('who', e.target.value)}
                       disabled={!isEditable}
                       placeholder="e.g. Unauthenticated user from 192.168.1.100"
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75 ${
+                        invData.who.trim().length > 0 && invData.who.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.who.trim().length > 0 && invData.who.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.who.trim().length}/8)</p>
+                    )}
                   </div>
                   {/* WHAT */}
                   <div>
@@ -313,8 +332,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.what} onChange={(e) => handleChange('what', e.target.value)}
                       disabled={!isEditable}
                       placeholder="e.g. Attempted multiple SQL injections on login form"
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75 ${
+                        invData.what.trim().length > 0 && invData.what.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.what.trim().length > 0 && invData.what.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.what.trim().length}/8)</p>
+                    )}
                   </div>
                   {/* WHEN */}
                   <div>
@@ -323,8 +347,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.when} onChange={(e) => handleChange('when', e.target.value)}
                       disabled={!isEditable}
                       placeholder="e.g. Between 08:23 UTC and 08:35 UTC"
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75 ${
+                        invData.when.trim().length > 0 && invData.when.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.when.trim().length > 0 && invData.when.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.when.trim().length}/8)</p>
+                    )}
                   </div>
                   {/* WHERE */}
                   <div>
@@ -333,8 +362,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.where} onChange={(e) => handleChange('where', e.target.value)}
                       disabled={!isEditable}
                       placeholder="e.g. Web-Server-01 in the DMZ"
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary disabled:opacity-75 ${
+                        invData.where.trim().length > 0 && invData.where.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.where.trim().length > 0 && invData.where.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.where.trim().length}/8)</p>
+                    )}
                   </div>
                   {/* WHY */}
                   <div>
@@ -343,8 +377,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.why} onChange={(e) => handleChange('why', e.target.value)}
                       disabled={!isEditable}
                       placeholder="e.g. Automated scanning script targeting exposed login endpoints."
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary min-h-[60px] disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary min-h-[60px] disabled:opacity-75 ${
+                        invData.why.trim().length > 0 && invData.why.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.why.trim().length > 0 && invData.why.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.why.trim().length}/8)</p>
+                    )}
                   </div>
                   {/* ADDITIONAL NOTES */}
                   <div>
@@ -403,8 +442,13 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
                       value={invData.l2Reason} onChange={(e) => handleChange('l2Reason', e.target.value)}
                       disabled={!isEditable}
                       placeholder={(invData.l2Escalation === 'Yes' || mustEscalate) ? "Provide detailed reasoning for L2 intervention..." : "Why does this not require L2 execution? Explain..."}
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary min-h-[80px] disabled:opacity-75"
+                      className={`w-full bg-background border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary min-h-[80px] disabled:opacity-75 ${
+                        invData.l2Reason.trim().length > 0 && invData.l2Reason.trim().length < 8 ? 'border-destructive' : 'border-input'
+                      }`}
                     />
+                    {invData.l2Reason.trim().length > 0 && invData.l2Reason.trim().length < 8 && (
+                      <p className="text-[11px] text-destructive mt-1 font-mono">Minimum 8 characters required ({invData.l2Reason.trim().length}/8)</p>
+                    )}
                   </div>
                 )}
               </div>

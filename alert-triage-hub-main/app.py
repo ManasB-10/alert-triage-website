@@ -9,6 +9,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 CORS(app)  # This allows your React frontend to talk to this Python backend
 
+# ── Brute-force login protection ──────────────────────────────────
+# { email: { 'count': int, 'locked_until': datetime | None } }
+_login_attempts: dict = {}
+MAX_LOGIN_ATTEMPTS = 10
+LOCKOUT_MINUTES = 15
+
 # 1. Database Connection Configuration
 def get_db_connection():
     return mysql.connector.connect(
@@ -27,15 +33,20 @@ def get_alerts():
     assigned_to_user_id = request.args.get('assigned_to_user_id')
     viewing_user_id = request.args.get('viewing_user_id')
     limit = request.args.get('limit')
-    
+    page     = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     query = """
-        SELECT a.id, a.source_ip, a.dest_ip, a.event_type, a.severity, a.status, 
-               a.assigned_analyst_id, u.full_name as assigned_analyst_name, a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
+        SELECT a.id, a.source_ip, a.dest_ip, a.event_type, a.severity, a.status,
+               a.assigned_analyst_id, u.full_name as assigned_analyst_name,
+               a.created_at, a.trigger_time, a.tags, a.description, a.detection_source,
+               a.closed_at,
                asst.asset_name, asst.asset_type, asst.criticality_score, asst.location as asset_location,
-               t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as closed_at, t.assigned_to_user_id
+               t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as ticket_updated_at,
+               t.assigned_to_user_id
         FROM alerts a
         LEFT JOIN assets asst ON a.asset_id = asst.asset_id
         LEFT JOIN tickets t ON a.id = t.alert_id
@@ -44,12 +55,14 @@ def get_alerts():
     conditions = []
     params = []
 
-    # Apply global privacy rules:
-    # 1. New alerts are visible to everyone
-    # 2. Other alerts are only visible to the owner (unless it's a specific query for another user, e.g. for Manager views)
+    # Privacy rules:
+    # viewing_user_id present → junior analyst view → hide escalated
     if viewing_user_id:
         conditions.append("(a.status = 'new' OR a.assigned_analyst_id = %s OR t.assigned_to_user_id = %s)")
         params.extend([viewing_user_id, viewing_user_id])
+        # Block escalated alerts from junior analyst view unless they explicitly filter for it
+        if not status_filter and not status_in:
+            conditions.append("a.status != 'escalated'")
 
     if status_filter:
         conditions.append("a.status = %s")
@@ -70,22 +83,35 @@ def get_alerts():
         query += " WHERE " + " AND ".join(conditions)
 
     query += " ORDER BY a.id DESC"
-    
+
+    # --- Count total (before limit) ---
+    count_query = f"SELECT COUNT(*) as total FROM ({query}) as sub"
+    cursor.execute(count_query, tuple(params))
+    total = cursor.fetchone()['total']
+
+    # --- Pagination (overrides legacy 'limit') ---
     if limit:
+        # Legacy single-limit mode (used by manager card fetch)
         query += " LIMIT %s"
         params.append(int(limit))
-    
+    else:
+        offset = (page - 1) * per_page
+        query += " LIMIT %s OFFSET %s"
+        params.extend([per_page, offset])
+
     cursor.execute(query, tuple(params))
     alerts = cursor.fetchall()
     cursor.close()
     conn.close()
-    
+
     for alert in alerts:
-        if alert.get('created_at'):
-            alert['created_at'] = str(alert['created_at'])
-        if alert.get('closed_at'):
-            alert['closed_at'] = str(alert['closed_at'])
-            
+        for field in ('created_at', 'closed_at', 'ticket_updated_at'):
+            if alert.get(field):
+                alert[field] = str(alert[field])
+
+    # If paginated (no legacy limit), return envelope
+    if not limit:
+        return jsonify({'alerts': alerts, 'total': total, 'page': page, 'per_page': per_page})
     return jsonify(alerts)
 
 # 3. Route for the CLAIM BUTTON functionality
@@ -264,6 +290,17 @@ def save_resolution(alert_id):
     status = data.get('status')
     severity = data.get('severity')
 
+    # --- Server-side 5 W's minimum-length validation (≥ 8 chars each) ---
+    if resolution_notes and isinstance(resolution_notes, dict):
+        required_fields = ['who', 'what', 'when', 'where', 'why']
+        for field in required_fields:
+            val = resolution_notes.get(field, '')
+            if isinstance(val, str) and 0 < len(val.strip()) < 8:
+                return jsonify({'message': f"Field '{field}' must be at least 8 characters long."}), 400
+        l2_reason = resolution_notes.get('l2Reason', '')
+        if isinstance(l2_reason, str) and 0 < len(l2_reason.strip()) < 8:
+            return jsonify({'message': "L2 reason must be at least 8 characters long."}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -279,6 +316,10 @@ def save_resolution(alert_id):
             fields_to_update.append("severity = %s")
             params_to_update.append(severity)
         
+        # Set closed_at when finalizing the alert
+        if status in ('closed', 'escalated'):
+            fields_to_update.append("closed_at = NOW()")
+
         if fields_to_update:
             alerts_query = f"UPDATE alerts SET {', '.join(fields_to_update)} WHERE id = %s"
             params_to_update.append(alert_id)
@@ -393,6 +434,13 @@ def login():
     if not all([email, password, role_frontend]):
         return jsonify({"message": "Missing required fields"}), 400
 
+    # Brute-force check
+    now = datetime.now()
+    attempt = _login_attempts.get(email, {'count': 0, 'locked_until': None})
+    if attempt['locked_until'] and now < attempt['locked_until']:
+        remaining = int((attempt['locked_until'] - now).total_seconds() / 60)
+        return jsonify({"message": f"Account temporarily locked due to too many failed attempts. Try again in {remaining or 1} minutes."}), 429
+
     role_db = 'Manager' if role_frontend == 'soc_manager' else 'Junior_Analyst'
 
     conn = get_db_connection()
@@ -407,6 +455,14 @@ def login():
             if user.get('account_status') == 'Suspended':
                 return jsonify({"message": "Your account has been suspended. Please contact your manager."}), 403
 
+            # Update last login
+            cursor.execute("UPDATE users SET last_login = NOW() WHERE user_id = %s", (user['user_id'],))
+            conn.commit()
+
+            # Reset brute-force counter on success
+            if email in _login_attempts:
+                del _login_attempts[email]
+
             user_info = {
                 "id": str(user['user_id']),
                 "name": user['full_name'],
@@ -415,6 +471,12 @@ def login():
             }
             return jsonify({"message": "Login successful", "user": user_info}), 200
         else:
+            # Increment brute-force counter on failure
+            attempt['count'] += 1
+            if attempt['count'] >= MAX_LOGIN_ATTEMPTS:
+                attempt['locked_until'] = now + timedelta(minutes=LOCKOUT_MINUTES)
+            _login_attempts[email] = attempt
+
             return jsonify({"message": "Invalid email or password for selected role"}), 401
     except Exception as e:
         return jsonify({"message": str(e)}), 500
@@ -508,11 +570,14 @@ def manager_stats():
         cursor.execute("SELECT COUNT(*) as total FROM users WHERE role = 'Junior_Analyst' AND account_status = 'Active'")
         analysts = cursor.fetchone()['total']
 
+        escalated_count = status_counts.get('escalated', 0)
+
         return jsonify({
             'status_counts': status_counts,
             'severity_counts': severity_counts,
             'total_alerts': total,
-            'active_analysts': analysts
+            'active_analysts': analysts,
+            'escalated_count': escalated_count
         }), 200
     except Exception as e:
         return jsonify({'message': str(e)}), 500
@@ -581,7 +646,7 @@ def get_analysts():
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
-            SELECT u.user_id, u.username, u.full_name, u.email, u.account_status, u.created_at,
+            SELECT u.user_id, u.username, u.full_name, u.email, u.account_status, u.created_at, u.last_login,
                    COALESCE(p.average_ai_score, 0) as avg_ai_score
             FROM users u
             LEFT JOIN analyst_performance p ON u.user_id = p.user_id
@@ -613,6 +678,12 @@ def create_analyst():
 
     if not all([username, full_name, email, password]):
         return jsonify({"message": "All fields are required"}), 400
+
+    # Password strength: min 8 chars, at least 1 letter + 1 digit
+    if len(password) < 8:
+        return jsonify({"message": "Password must be at least 8 characters long"}), 400
+    if not re.search(r'[a-zA-Z]', password) or not re.search(r'\d', password):
+        return jsonify({"message": "Password must contain at least one letter and one digit"}), 400
 
     password_hash = generate_password_hash(password)
 
@@ -825,16 +896,35 @@ def unclaim_alert():
         cursor.close()
         conn.close()
 
-# M-7: Manager deletes an alert
+# M-7: Manager deletes an alert (only 'new' or 'closed' alerts)
 @app.route('/api/manager/alerts/<int:alert_id>', methods=['DELETE'])
 def delete_alert(alert_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     try:
+        # 1. Fetch the alert's current status + assigned analyst for perf sync
+        cursor.execute("SELECT status, assigned_analyst_id FROM alerts WHERE id = %s", (alert_id,))
+        alert = cursor.fetchone()
+
+        if not alert:
+            return jsonify({'message': 'Alert not found'}), 404
+
+        # 2. Only allow deletion of 'new' or 'closed' alerts
+        if alert['status'] not in ('new', 'closed'):
+            return jsonify({
+                'message': f"Cannot delete a '{alert['status']}' alert. Only 'new' or 'closed' alerts may be deleted."
+            }), 403
+
+        analyst_id = alert.get('assigned_analyst_id')
+
+        # 3. Proceed with deletion
         cursor.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
         conn.commit()
-        if cursor.rowcount == 0:
-            return jsonify({'message': 'Alert not found'}), 404
+
+        # 4. Sync performance for the analyst who handled this alert
+        if analyst_id:
+            sync_analyst_performance(conn, analyst_id)
+
         return jsonify({'message': 'Alert deleted successfully'}), 200
     except Exception as e:
         return jsonify({'message': str(e)}), 500

@@ -15,6 +15,11 @@ const AlertTable = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [filterSeverity, setFilterSeverity] = useState<Severity | 'all'>('all');
   
+  // Table state
+  const [page, setPage] = useState(1);
+  const [sortCol, setSortCol] = useState('id');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  
   // Use context filter if available, otherwise 'all'
   const filterStatus = activeFilter || 'all';
   const setFilterStatus = (status: AlertStatus | 'all') => {
@@ -37,10 +42,46 @@ const AlertTable = () => {
   const filtered = alerts
     .filter(a => filterSeverity === 'all' || a.severity === filterSeverity)
     .filter(a => {
-      // Junior Analysts cannot see escalated alerts in the main Alerts table
       if (!isManager && a.status === 'escalated') return false;
       return filterStatus === 'all' || a.status === filterStatus;
     });
+
+  const sortedAlerts = [...filtered].sort((a: SecurityAlert, b: SecurityAlert) => {
+    let valA = (a as any)[sortCol];
+    let valB = (b as any)[sortCol];
+
+    if (sortCol === 'timestamp') {
+      valA = new Date(a.timestamp).getTime();
+      valB = new Date(b.timestamp).getTime();
+    } else if (sortCol === 'title') {
+      valA = a.title;
+      valB = b.title;
+    }
+
+    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const paginatedAlerts = sortedAlerts.slice((page - 1) * 10, page * 10);
+
+  const getAgeText = (timestamp: string) => {
+    const diffMs = new Date().getTime() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    let text = '';
+    if (minutes < 60) {
+      text = `${Math.max(1, minutes)} Minute${minutes !== 1 ? 's' : ''} Ago`;
+    } else if (hours < 24) {
+      text = `${hours} Hour${hours !== 1 ? 's' : ''} Ago`;
+    } else {
+      text = `${days} Day${days !== 1 ? 's' : ''} Ago`;
+    }
+
+    return <span className="ml-2 text-[10px] text-muted-foreground font-mono">{text}</span>;
+  };
 
   return (
     <>
@@ -91,18 +132,38 @@ const AlertTable = () => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-secondary/50">
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">ID</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Alert</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Severity</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Source</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Tags</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Time</th>
-                <th className="text-right px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Actions</th>
+                {[
+                  { id: 'id', label: 'ID' },
+                  { id: 'title', label: 'Alert' },
+                  { id: 'severity', label: 'Severity' },
+                  { id: 'status', label: 'Status' },
+                  { id: 'source', label: 'Source' },
+                  { id: 'tags', label: 'Tags' },
+                  { id: 'timestamp', label: 'Time' },
+                  { id: null, label: 'Actions' }
+                ].map(h => (
+                  <th 
+                    key={h.label} 
+                    onClick={() => {
+                      if (h.id) {
+                        if (sortCol === h.id) {
+                          setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortCol(h.id);
+                          setSortDir('asc');
+                        }
+                      }
+                    }}
+                    className={`text-left px-4 py-3 text-[10px] font-mono text-muted-foreground uppercase tracking-wider ${h.id ? 'cursor-pointer hover:text-foreground select-none' : 'text-right'}`}
+                  >
+                    {h.label}
+                    {h.id && sortCol === h.id && (sortDir === 'asc' ? ' ▲' : ' ▼')}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((alert) => (
+              {paginatedAlerts.map((alert) => (
                 <tr 
                   key={alert.id} 
                   onClick={() => setSelectedAlert(alert)}
@@ -126,7 +187,10 @@ const AlertTable = () => {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
-                    {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex items-center">
+                      {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {getAgeText(alert.timestamp)}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -181,9 +245,35 @@ const AlertTable = () => {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-border bg-secondary/30 text-xs text-muted-foreground font-mono">
-          Showing {filtered.length} of {alerts.length} alerts
-        </div>
+        
+        {filtered.length > 10 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/30">
+            <p className="text-xs text-muted-foreground font-mono">
+              Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, filtered.length)} of {filtered.length} alerts
+            </p>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 rounded border border-border text-xs disabled:opacity-50 hover:bg-secondary transition-colors"
+              >
+                Prev
+              </button>
+              <button 
+                onClick={() => setPage(p => p + 1)}
+                disabled={page * 10 >= filtered.length}
+                className="px-3 py-1 rounded border border-border text-xs disabled:opacity-50 hover:bg-secondary transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+        {filtered.length <= 10 && (
+          <div className="px-4 py-3 border-t border-border bg-secondary/30 text-xs text-muted-foreground font-mono">
+            Showing {filtered.length} of {alerts.length} alerts
+          </div>
+        )}
       </div>
 
       {/* Modals */}

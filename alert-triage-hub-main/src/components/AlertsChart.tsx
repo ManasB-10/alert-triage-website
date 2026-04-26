@@ -23,7 +23,7 @@ const AlertsChart = () => {
 
   const severityData = Object.entries(
     alerts.reduce((acc, a) => {
-      if (a.severity === 'info') return acc;
+      if ((a.severity as string) === 'info') return acc;
       return { ...acc, [a.severity]: (acc[a.severity] || 0) + 1 };
     }, {} as Record<string, number>)
   )
