@@ -23,10 +23,16 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isDuplicateTab, setIsDuplicateTab] = useState(false);
-  const [isVerifyingSession, setIsVerifyingSession] = useState(false);
+  
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('sentinel_user');
+    const savedUser = sessionStorage.getItem('sentinel_user');
     return savedUser ? JSON.parse(savedUser) : null;
+  });
+
+  const [isVerifyingSession, setIsVerifyingSession] = useState(() => {
+    if (!user) return false;
+    const isTabAuthorized = sessionStorage.getItem('sentinel_active_session') === user.id;
+    return !isTabAuthorized;
   });
 
   useEffect(() => {
@@ -37,59 +43,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const channel = new BroadcastChannel('sentinel_security_sync');
-    
-    // Check if this specific tab was the one that logged in
-    const isTabAuthorized = sessionStorage.getItem('sentinel_active_session') === user.role;
+    const isTabAuthorized = sessionStorage.getItem('sentinel_active_session') === user.id;
     
     if (!isTabAuthorized) {
-      // SUSPECT: This is a new tab or pasted link.
-      // We MUST verify if another tab is active before showing any content.
       setIsVerifyingSession(true);
-      channel.postMessage({ type: 'PING_ROLE', role: user.role });
+      channel.postMessage({ type: 'PING_SESSION', userId: user.id, email: user.email });
 
-      // Give it 250ms to hear a PONG. If nothing, assume we are safe (e.g. previous tab closed)
       const timeout = setTimeout(() => {
         setIsVerifyingSession(false);
-        sessionStorage.setItem('sentinel_active_session', user.role);
-      }, 300);
+        sessionStorage.setItem('sentinel_active_session', user.id);
+      }, 400);
 
       channel.onmessage = (event) => {
-        const { type, role } = event.data;
-        if (type === 'PONG_ROLE' && role === user.role) {
+        const { type, userId, email } = event.data;
+        if (type === 'PONG_SESSION' && (userId === user.id || email === user.email)) {
           clearTimeout(timeout);
           setIsVerifyingSession(false);
           setIsDuplicateTab(true); 
-          // Logout this tab's in-memory state and redirect
           setUser(null); 
-          localStorage.removeItem('sentinel_user');
-          window.location.href = '/'; // Hard redirect to clear any state
+          sessionStorage.removeItem('sentinel_user');
+          sessionStorage.removeItem('sentinel_active_session');
         }
+      };
+
+      return () => {
+        clearTimeout(timeout);
+        channel.close();
       };
     } else {
       setIsVerifyingSession(false);
-      // We are the authorized tab. Listen for probes.
       channel.onmessage = (event) => {
-        const { type, role } = event.data;
-        if (type === 'PING_ROLE' && role === user.role) {
-          channel.postMessage({ type: 'PONG_ROLE', role: user.role });
+        const { type, userId, email } = event.data;
+        if (type === 'PING_SESSION' && (userId === user.id || email === user.email)) {
+          channel.postMessage({ type: 'PONG_SESSION', userId: user.id, email: user.email });
         }
       };
+      return () => channel.close();
     }
-
-    return () => channel.close();
   }, [user]);
 
   const login = (userData: User) => {
     setUser(userData);
-    localStorage.setItem('sentinel_user', JSON.stringify(userData));
-    // Mark THIS tab as the authorized one for this role
-    sessionStorage.setItem('sentinel_active_session', userData.role);
+    sessionStorage.setItem('sentinel_user', JSON.stringify(userData));
+    sessionStorage.setItem('sentinel_active_session', userData.id);
     setIsVerifyingSession(false);
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('sentinel_user');
+    sessionStorage.removeItem('sentinel_user');
     sessionStorage.removeItem('sentinel_active_session');
     setIsVerifyingSession(false);
     setIsDuplicateTab(false);
@@ -99,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(prev => {
       if (!prev) return null;
       const newUser = { ...prev, ...updates };
-      localStorage.setItem('sentinel_user', JSON.stringify(newUser));
+      sessionStorage.setItem('sentinel_user', JSON.stringify(newUser));
       return newUser;
     });
   };
@@ -111,7 +113,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

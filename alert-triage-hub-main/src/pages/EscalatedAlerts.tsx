@@ -3,14 +3,18 @@ import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
 import { useAlerts, SecurityAlert } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldAlert, Hand, ShieldPlus, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import { ShieldAlert, Hand, ShieldPlus, ChevronRight, Globe } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 const EscalatedAlerts = () => {
-  const { alerts, claimAlert } = useAlerts();
+  const { alerts, claimAlert, refreshAlerts } = useAlerts();
   const { user } = useAuth();
   const isManager = user?.role === 'soc_manager';
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
+
+  useEffect(() => {
+    refreshAlerts();
+  }, []);
 
   const escalatedAlerts = alerts
     .filter(a => a.status === 'escalated')
@@ -72,6 +76,12 @@ const EscalatedAlerts = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <p className="font-bold text-foreground group-hover:text-purple-400 transition-colors">{alert.title}</p>
+                        {alert.hasIntelMatch && (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[8px] font-mono font-bold animate-pulse">
+                            <Globe className="w-2.5 h-2.5" />
+                            INTEL MATCH
+                          </div>
+                        )}
                         <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-tighter ${
                           alert.severity === 'critical' ? 'bg-destructive/20 text-destructive border border-destructive/20' :
                           alert.severity === 'high' ? 'bg-warning/20 text-warning border border-warning/20' :

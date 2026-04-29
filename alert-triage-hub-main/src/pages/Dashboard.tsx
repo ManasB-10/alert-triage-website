@@ -6,9 +6,9 @@ import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from '@/components/SeverityBadge';
 import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
-import { Clock, Activity, Hand, ShieldPlus, RotateCcw } from 'lucide-react';
+import { Clock, Activity, Hand, ShieldPlus, RotateCcw, Globe } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { type AlertStatus } from '@/context/AlertContext';
 
 const Dashboard = () => {
@@ -19,6 +19,11 @@ const Dashboard = () => {
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
   const [flashedStatus, setFlashedStatus] = useState<AlertStatus | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-refresh when page is opened
+  useEffect(() => {
+    refreshAlerts();
+  }, []); // Run only on mount
 
   // Per-status panel glow styles (temporary flash)
   const panelGlowMap: Record<string, string> = {
@@ -140,6 +145,12 @@ const Dashboard = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3">
                     <p className="text-sm font-medium text-foreground truncate">{alert.title}</p>
+                    {alert.hasIntelMatch && (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[8px] font-mono font-bold animate-pulse">
+                        <Globe className="w-2.5 h-2.5" />
+                        INTEL MATCH
+                      </div>
+                    )}
                     <SeverityBadge severity={alert.severity} />
                   </div>
                   <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{alert.sourceIp} → {alert.destIp}</p>

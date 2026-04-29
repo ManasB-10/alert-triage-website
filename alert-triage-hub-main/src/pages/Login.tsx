@@ -228,12 +228,12 @@ const Login = () => {
     
     const checkTimeout = new Promise<void>((resolve) => {
       channel.onmessage = (event) => {
-        if (event.data.type === 'PONG_ROLE' && event.data.role === selectedRole) {
+        if (event.data.type === 'PONG_SESSION' && event.data.email === email.trim()) {
           isAlreadyActive = true;
           resolve();
         }
       };
-      channel.postMessage({ type: 'PING_ROLE', role: selectedRole });
+      channel.postMessage({ type: 'PING_SESSION', email: email.trim() });
       setTimeout(resolve, 250); // Wait 250ms for responses
     });
 
@@ -241,7 +241,7 @@ const Login = () => {
     channel.close();
 
     if (isAlreadyActive) {
-      toast.error("SECURITY ALERT: This account role is already in use in another active session/tab. Please close the other session first.");
+      toast.error("SECURITY ALERT: This account is already in use in another active session/tab. Please close the other session first.");
       setIsLoading(false);
       return;
     }

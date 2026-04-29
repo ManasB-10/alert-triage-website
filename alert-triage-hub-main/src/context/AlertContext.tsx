@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
 
@@ -28,6 +28,9 @@ export interface SecurityAlert {
   resolutionNotes?: Record<string, any>;
   assigned_to_user_id?: number | string | null;
   detection_source?: string;
+  hasIntelMatch?: boolean;
+  intelThreatType?: string;
+  intelConfidence?: number;
 }
 
 interface AlertContextType {
@@ -99,7 +102,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const API = 'http://localhost:5000';
 
-  const loadAlerts = async () => {
+  const loadAlerts = useCallback(async () => {
     try {
       // Pass the current user ID to enforce visibility rules (New alerts vs My history)
       const url = user?.id 
@@ -156,19 +159,21 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         assetCriticality: d.criticality_score,
         assetLocation: d.asset_location,
         detection_source: d.detection_source,
-        assigned_to_user_id: d.assigned_to_user_id
+        assigned_to_user_id: d.assigned_to_user_id,
+        hasIntelMatch: !!d.has_intel_match,
+        intelThreatType: d.intel_threat_type as string,
+        intelConfidence: d.intel_confidence as number
       };
       });
       setAlerts(mapped);
     } catch (e) {
       console.error('Failed to load alerts:', e);
     }
-  };
+  }, [user?.id, API]);
 
   useEffect(() => {
     loadAlerts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilter, user?.id]); // Refresh if filter or user changes
+  }, [loadAlerts, activeFilter]); // Refresh if filter changes (server-side filtering if implemented) or loadAlerts changes
 
   const addAlert = (alert: Omit<SecurityAlert, 'id' | 'timestamp' | 'status' | 'notes'>) => {
     // Implement POST if required, fallback for now

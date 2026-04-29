@@ -125,3 +125,4 @@ select * from alerts;
 select * from assets;
 select * from tickets;
 select * from analyst_performance;
+select * from threat_intel;

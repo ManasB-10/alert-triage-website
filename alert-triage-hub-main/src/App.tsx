@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import AnalystProfile from "./pages/AnalystProfile";
 import ManagerProfile from "./pages/ManagerProfile";
+import ThreatIntel from "./pages/ThreatIntel";
 import Alerts from "./pages/Alerts";
 import CriticalAlerts from "./pages/CriticalAlerts";
 import EscalatedAlerts from "./pages/EscalatedAlerts";
@@ -22,7 +23,19 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   const { user, isVerifyingSession } = useAuth();
   
   // While verifying if this is a duplicate tab, don't render anything
-  if (isVerifyingSession) return null;
+  // While verifying if this is a duplicate tab, show a premium loading state
+  if (isVerifyingSession) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-[9999]">
+        <div className="relative w-16 h-16 mb-4">
+          <div className="absolute inset-0 border-4 border-accent/20 rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+          <ShieldAlert className="absolute inset-0 m-auto w-6 h-6 text-accent animate-pulse" />
+        </div>
+        <p className="text-sm font-mono text-muted-foreground animate-pulse">Verifying Security Session...</p>
+      </div>
+    );
+  }
   
   if (!user) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -56,6 +69,7 @@ const App = () => (
               <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
               <Route path="/profile/analyst" element={<ProtectedRoute allowedRoles={['junior_analyst']}><AnalystProfile /></ProtectedRoute>} />
               <Route path="/profile/manager" element={<ProtectedRoute allowedRoles={['soc_manager']}><ManagerProfile /></ProtectedRoute>} />
+              <Route path="/manager/threat-intel" element={<ProtectedRoute allowedRoles={['soc_manager']}><ThreatIntel /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

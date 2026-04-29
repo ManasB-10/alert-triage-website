@@ -3,11 +3,16 @@ import AlertTable from '@/components/AlertTable';
 import { useAuth } from '@/context/AuthContext';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { useAlerts } from '@/context/AlertContext';
+import { useEffect } from 'react';
 
 const Alerts = () => {
   const { user } = useAuth();
   const { refreshAlerts } = useAlerts();
   const isManager = user?.role === 'soc_manager';
+
+  useEffect(() => {
+    refreshAlerts();
+  }, []);
 
   return (
     <DashboardLayout>

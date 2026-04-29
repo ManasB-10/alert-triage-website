@@ -5,7 +5,7 @@ import { useAlerts } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
 import SeverityBadge from './SeverityBadge';
 import StatusBadge from './StatusBadge';
-import { X, Hand, ShieldCheck, Save, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Hand, ShieldCheck, Save, CheckCircle, ChevronDown, ChevronUp, AlertTriangle, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -177,6 +177,58 @@ const AlertDetailModal = ({ alert, onClose }: Props) => {
           {showDetails && (
             <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
               <p className="text-sm text-secondary-foreground leading-relaxed">{alert.description}</p>
+
+              {/* Threat Intelligence Enrichment Section */}
+              {alert.hasIntelMatch && (
+                <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-5 space-y-4 animate-in zoom-in-95 duration-500">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-red-400 flex items-center gap-2">
+                      <Globe className="w-4 h-4" />
+                      Threat Intelligence Enrichment
+                    </h3>
+                    <div className="flex items-center gap-2 px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-[10px] font-mono text-red-400 uppercase tracking-widest font-bold">
+                      Match Found
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-secondary/40 rounded-lg p-3 border border-border/50">
+                      <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Known Threat Type</p>
+                      <p className="text-sm font-bold text-foreground mt-1 uppercase tracking-tight">{alert.intelThreatType}</p>
+                    </div>
+                    <div className="bg-secondary/40 rounded-lg p-3 border border-border/50">
+                      <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Confidence Score</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all ${
+                              (alert.intelConfidence || 0) >= 90 ? 'bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.5)]' :
+                              (alert.intelConfidence || 0) >= 70 ? 'bg-accent' :
+                              'bg-blue-400'
+                            }`}
+                            style={{ width: `${alert.intelConfidence}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-mono font-bold text-foreground">{alert.intelConfidence}%</span>
+                      </div>
+                    </div>
+                    <div className="bg-secondary/40 rounded-lg p-3 border border-border/50">
+                      <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Source Provider</p>
+                      <p className="text-sm font-mono text-foreground mt-1 truncate">Manual / Verified</p>
+                    </div>
+                  </div>
+
+                  {/* Warning for High Confidence */}
+                  {(alert.intelConfidence || 0) >= 80 && (
+                    <div className="flex items-start gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                      <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-red-400/90 leading-relaxed font-medium">
+                        <span className="font-bold">CRITICAL INDICATOR:</span> This IP has been verified by the threat feed as a highly probable match for <span className="underline decoration-red-400/50">{alert.intelThreatType}</span>. Immediate investigation and containment are recommended.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {[

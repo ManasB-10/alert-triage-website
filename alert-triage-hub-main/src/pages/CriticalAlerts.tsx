@@ -3,14 +3,18 @@ import StatusBadge from '@/components/StatusBadge';
 import AlertDetailModal from '@/components/AlertDetailModal';
 import { useAlerts, SecurityAlert } from '@/context/AlertContext';
 import { useAuth } from '@/context/AuthContext';
-import { AlertOctagon, Hand, ShieldAlert } from 'lucide-react';
-import { useState } from 'react';
+import { AlertOctagon, Hand, ShieldAlert, Globe } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 const CriticalAlerts = () => {
-  const { alerts, claimAlert } = useAlerts();
+  const { alerts, claimAlert, refreshAlerts } = useAlerts();
   const { user } = useAuth();
   const isManager = user?.role === 'soc_manager';
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
+
+  useEffect(() => {
+    refreshAlerts();
+  }, []);
 
   const criticalAlerts = alerts
     .filter(a => a.severity === 'critical' && (isManager || a.status === 'new'))
@@ -66,7 +70,15 @@ const CriticalAlerts = () => {
                   >
                     <td className="px-5 py-4 font-mono text-xs text-muted-foreground">{alert.id}</td>
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-foreground">{alert.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-foreground">{alert.title}</p>
+                        {alert.hasIntelMatch && (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[8px] font-mono font-bold animate-pulse">
+                            <Globe className="w-2.5 h-2.5" />
+                            INTEL MATCH
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground font-mono mt-1">
                         Detected at {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>

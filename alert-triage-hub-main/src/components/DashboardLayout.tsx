@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown, ShieldAlert, Globe } from 'lucide-react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -15,6 +15,7 @@ const analystNavItems = [
 
 const managerNavItems = [
   { label: 'Command Center', path: '/manager', icon: LayoutDashboard },
+  { label: 'Threat Intel',   path: '/manager/threat-intel', icon: Globe },
 ];
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {

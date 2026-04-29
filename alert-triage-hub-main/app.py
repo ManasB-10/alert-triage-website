@@ -46,11 +46,13 @@ def get_alerts():
                a.closed_at,
                asst.asset_name, asst.asset_type, asst.criticality_score, asst.location as asset_location,
                t.resolution_notes, t.ai_score, t.ai_reasoning, t.updated_at as ticket_updated_at,
-               t.assigned_to_user_id
+               t.assigned_to_user_id,
+               ti.threat_type as intel_threat_type, ti.confidence_score as intel_confidence
         FROM alerts a
         LEFT JOIN assets asst ON a.asset_id = asst.asset_id
         LEFT JOIN tickets t ON a.id = t.alert_id
         LEFT JOIN users u ON a.assigned_analyst_id = u.user_id
+        LEFT JOIN threat_intel ti ON a.source_ip = ti.indicator_value AND ti.is_active = TRUE
     """
     conditions = []
     params = []
@@ -108,6 +110,12 @@ def get_alerts():
         for field in ('created_at', 'closed_at', 'ticket_updated_at'):
             if alert.get(field):
                 alert[field] = str(alert[field])
+        
+        # Threat Intel Flagging
+        if alert.get('intel_threat_type'):
+            alert['has_intel_match'] = True
+        else:
+            alert['has_intel_match'] = False
 
     # If paginated (no legacy limit), return envelope
     if not limit:
@@ -972,6 +980,92 @@ def update_profile():
         cursor.close()
         conn.close()
 
+# M-9: Get all Threat Intelligence indicators
+@app.route('/api/manager/threat-intel', methods=['GET'])
+def get_threat_intel():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM threat_intel ORDER BY last_seen DESC")
+        rows = cursor.fetchall()
+        for row in rows:
+            if row.get('last_seen'):
+                row['last_seen'] = str(row['last_seen'])
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# M-10: Add new Threat Intelligence indicator
+@app.route('/api/manager/threat-intel', methods=['POST'])
+def add_threat_intel():
+    data = request.json
+    indicator = data.get('indicator_value')
+    threat_type = data.get('threat_type')
+    confidence = data.get('confidence_score', 0)
+    provider = data.get('source_provider', 'Manual')
+
+    if not all([indicator, threat_type]):
+        return jsonify({"message": "Indicator and Threat Type are required"}), 400
+
+    # IP Validation (Private Only)
+    if not is_private_ip(indicator):
+        return jsonify({'message': 'Threat indicators must be Private IP addresses (10.x, 172.16-31.x, 192.168.x) for security compliance'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO threat_intel (indicator_value, threat_type, confidence_score, source_provider) VALUES (%s, %s, %s, %s)",
+            (indicator, threat_type, confidence, provider)
+        )
+        conn.commit()
+        return jsonify({"message": "Threat indicator added successfully"}), 201
+    except Exception as e:
+        if 'Duplicate entry' in str(e):
+            return jsonify({"message": "This indicator already exists in threat intelligence"}), 409
+        return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# M-11: Toggle Threat Intelligence status
+@app.route('/api/manager/threat-intel/<int:intel_id>/toggle', methods=['POST'])
+def toggle_threat_intel(intel_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT is_active FROM threat_intel WHERE intel_id = %s", (intel_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"message": "Indicator not found"}), 404
+        
+        new_status = not row['is_active']
+        cursor.execute("UPDATE threat_intel SET is_active = %s WHERE intel_id = %s", (new_status, intel_id))
+        conn.commit()
+        return jsonify({"message": "Status updated", "is_active": new_status}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# M-12: Delete Threat Intelligence indicator
+@app.route('/api/manager/threat-intel/<int:intel_id>', methods=['DELETE'])
+def delete_threat_intel(intel_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM threat_intel WHERE intel_id = %s", (intel_id,))
+        conn.commit()
+        return jsonify({"message": "Indicator removed successfully"}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == '__main__':
     # Runs the server on port 5000

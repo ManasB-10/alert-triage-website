@@ -5,7 +5,7 @@ import SeverityBadge from './SeverityBadge';
 import StatusBadge from './StatusBadge';
 import AlertDetailModal from './AlertDetailModal';
 import AlertFormModal from './AlertFormModal';
-import { Eye, Hand, Search, XCircle, Plus, Pencil, Trash2, Filter } from 'lucide-react';
+import { Eye, Hand, Search, XCircle, Plus, Pencil, Trash2, Filter, Globe } from 'lucide-react';
 
 const AlertTable = () => {
   const { alerts, activeFilter, setFilter, claimAlert, investigateAlert, closeAlert, deleteAlert, selectedAlertId, setSelectedAlertId } = useAlerts();
@@ -14,6 +14,7 @@ const AlertTable = () => {
   const [editAlert, setEditAlert] = useState<SecurityAlert | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [filterSeverity, setFilterSeverity] = useState<Severity | 'all'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Table state
   const [page, setPage] = useState(1);
@@ -44,6 +45,18 @@ const AlertTable = () => {
     .filter(a => {
       if (!isManager && a.status === 'escalated') return false;
       return filterStatus === 'all' || a.status === filterStatus;
+    })
+    .filter(a => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        a.title.toLowerCase().includes(term) ||
+        a.sourceIp.toLowerCase().includes(term) ||
+        a.destIp.toLowerCase().includes(term) ||
+        a.source.toLowerCase().includes(term) ||
+        (a.tags && a.tags.toLowerCase().includes(term)) ||
+        (a.id && a.id.toLowerCase().includes(term))
+      );
     });
 
   const sortedAlerts = [...filtered].sort((a: SecurityAlert, b: SecurityAlert) => {
@@ -115,6 +128,25 @@ const AlertTable = () => {
           </select>
         </div>
 
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by alert, IP, source or tags..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+          />
+          {searchTerm && (
+            <button 
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         {isManager && (
           <button
             onClick={() => setShowCreate(true)}
@@ -171,7 +203,18 @@ const AlertTable = () => {
                 >
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{alert.id}</td>
                   <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{alert.title}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{alert.title}</p>
+                      {alert.hasIntelMatch && (
+                        <div 
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-mono font-bold animate-pulse"
+                          title={`Threat Intel Match: ${alert.intelThreatType} (${alert.intelConfidence}% Confidence)`}
+                        >
+                          <Globe className="w-3 h-3" />
+                          INTEL MATCH
+                        </div>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground font-mono mt-0.5">{alert.sourceIp} → {alert.destIp}</p>
                   </td>
                   <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
