@@ -6,7 +6,6 @@ const SEVERITY_COLORS: Record<string, string> = {
   high: '#e87f35',
   medium: '#e8a735',
   low: '#38bdf8',
-  info: '#6b7280',
 };
 
 const STATUS_COLORS: Record<string, string> = {

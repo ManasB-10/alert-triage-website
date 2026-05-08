@@ -15,12 +15,12 @@ const AlertTable = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [filterSeverity, setFilterSeverity] = useState<Severity | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Table state
   const [page, setPage] = useState(1);
   const [sortCol, setSortCol] = useState('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  
+
   // Use context filter if available, otherwise 'all'
   const filterStatus = activeFilter || 'all';
   const setFilterStatus = (status: AlertStatus | 'all') => {
@@ -28,7 +28,7 @@ const AlertTable = () => {
   };
 
   const isManager = user?.role === 'soc_manager';
-  
+
   useEffect(() => {
     if (selectedAlertId && alerts.length > 0) {
       const alert = alerts.find(a => a.id === selectedAlertId);
@@ -112,7 +112,6 @@ const AlertTable = () => {
             <option value="high">High</option>
             <option value="medium">Medium</option>
             <option value="low">Low</option>
-            <option value="info">Info</option>
           </select>
           <select
             value={filterStatus}
@@ -138,7 +137,7 @@ const AlertTable = () => {
             className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary transition-all"
           />
           {searchTerm && (
-            <button 
+            <button
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
@@ -174,8 +173,8 @@ const AlertTable = () => {
                   { id: 'timestamp', label: 'Time' },
                   { id: null, label: 'Actions' }
                 ].map(h => (
-                  <th 
-                    key={h.label} 
+                  <th
+                    key={h.label}
                     onClick={() => {
                       if (h.id) {
                         if (sortCol === h.id) {
@@ -196,8 +195,8 @@ const AlertTable = () => {
             </thead>
             <tbody>
               {paginatedAlerts.map((alert) => (
-                <tr 
-                  key={alert.id} 
+                <tr
+                  key={alert.id}
                   onClick={() => setSelectedAlert(alert)}
                   className="border-b border-border/50 hover:bg-secondary/30 transition-colors cursor-pointer group"
                 >
@@ -206,7 +205,7 @@ const AlertTable = () => {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{alert.title}</p>
                       {alert.hasIntelMatch && (
-                        <div 
+                        <div
                           className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-mono font-bold animate-pulse"
                           title={`Threat Intel Match: ${alert.intelThreatType} (${alert.intelConfidence}% Confidence)`}
                         >
@@ -241,12 +240,12 @@ const AlertTable = () => {
 
                       {/* Junior Analyst Actions */}
                       {!isManager && alert.status === 'new' && (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             claimAlert(alert.id, user!.id);
-                          }} 
-                          className="inline-flex items-center gap-1.5 bg-[#00e57f] text-black px-3 py-1.5 rounded text-sm font-semibold hover:bg-[#00db79] transition-colors shadow-sm" 
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-[#00e57f] text-black px-3 py-1.5 rounded text-sm font-semibold hover:bg-[#00db79] transition-colors shadow-sm"
                           title="Claim"
                         >
                           <Hand className="w-4 h-4" /> Claim
@@ -288,21 +287,21 @@ const AlertTable = () => {
             </tbody>
           </table>
         </div>
-        
+
         {filtered.length > 10 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/30">
             <p className="text-xs text-muted-foreground font-mono">
               Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, filtered.length)} of {filtered.length} alerts
             </p>
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="px-3 py-1 rounded border border-border text-xs disabled:opacity-50 hover:bg-secondary transition-colors"
               >
                 Prev
               </button>
-              <button 
+              <button
                 onClick={() => setPage(p => p + 1)}
                 disabled={page * 10 >= filtered.length}
                 className="px-3 py-1 rounded border border-border text-xs disabled:opacity-50 hover:bg-secondary transition-colors"

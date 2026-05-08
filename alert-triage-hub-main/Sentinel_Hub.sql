@@ -86,12 +86,6 @@ CREATE TABLE analyst_performance (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
--- 8. Table: System Configuration (Backend Settings)
-CREATE TABLE system_config (
-    config_key VARCHAR(50) PRIMARY KEY,
-    config_value VARCHAR(100),
-    description TEXT
-);
 
 -- ---------------------------------------------------------
 -- 9. Sample Data Insertion
