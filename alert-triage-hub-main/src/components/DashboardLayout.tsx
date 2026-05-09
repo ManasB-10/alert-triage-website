@@ -1,7 +1,8 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, AlertTriangle, LogOut, User, ShieldPlus, Crown, ShieldAlert, Globe } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -31,6 +32,56 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     logout();
     navigate('/');
   };
+
+  // Poll account status every 3s for analysts only.
+  // Handles two forced-logout cases:
+  //   Inactive → can self-reactivate by logging in again
+  //   Suspended → hard block, cannot login until manager lifts it
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!user || isManager) return; // only poll for analysts
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`http://localhost:5000/api/user/status?user_id=${user.id}`);
+        if (!res.ok) return; // network hiccup — skip this cycle
+        const data = await res.json();
+
+        if (data.account_status === 'Inactive') {
+          clearInterval(pollIntervalRef.current!);
+          logout();
+          navigate('/');
+          setTimeout(() => {
+            toast.warning(
+              'Your status has been set to Inactive by the manager. Please log in again to reactivate your account.',
+              { duration: 8000 }
+            );
+          }, 300);
+        } else if (data.account_status === 'Suspended') {
+          clearInterval(pollIntervalRef.current!);
+          logout();
+          navigate('/');
+          setTimeout(() => {
+            toast.error(
+              'Your account has been suspended by the manager. You cannot log in until your access is restored.',
+              { duration: 10000 }
+            );
+          }, 300);
+        }
+      } catch {
+        // Silently ignore — backend may be temporarily unreachable
+      }
+    };
+
+    // Run once immediately, then every 3 seconds (near-instant detection)
+    checkStatus();
+    pollIntervalRef.current = setInterval(checkStatus, 3000);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [user, isManager]);
 
   const handleProfileClick = () => {
     navigate(isManager ? '/profile/manager' : '/profile/analyst');
@@ -138,7 +189,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
         </header>
 
-        <div className="p-6">
+        <div key={location.key} className="p-6">
           {children}
         </div>
       </main>

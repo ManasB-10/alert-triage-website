@@ -459,9 +459,13 @@ def login():
         user = cursor.fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
-            # Check if user account is suspended
+            # Check if user account is suspended (hard block)
             if user.get('account_status') == 'Suspended':
                 return jsonify({"message": "Your account has been suspended. Please contact your manager."}), 403
+
+            # If Inactive, auto-reactivate on successful login
+            if user.get('account_status') == 'Inactive':
+                cursor.execute("UPDATE users SET account_status = 'Active' WHERE user_id = %s", (user['user_id'],))
 
             # Update last login
             cursor.execute("UPDATE users SET last_login = NOW() WHERE user_id = %s", (user['user_id'],))
@@ -552,6 +556,33 @@ def reset_password():
             return jsonify({"message": "Identity Verification Failed. Check your Username and Email."}), 401
     except Exception as e:
         return jsonify({"message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# ──────────────────────────────────────────
+# USER STATUS CHECK (for frontend polling)
+# ──────────────────────────────────────────
+
+# Returns just the account_status for a given user_id.
+# The analyst frontend polls this every 3s to detect if the manager
+# has set them to Inactive or Suspended while they are logged in.
+@app.route('/api/user/status', methods=['GET'])
+def get_user_status():
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'message': 'user_id is required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT account_status FROM users WHERE user_id = %s", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'message': 'User not found'}), 404
+        return jsonify({'account_status': row['account_status']}), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
     finally:
         cursor.close()
         conn.close()
@@ -736,7 +767,7 @@ def delete_analyst(user_id):
         conn.close()
 
 
-# M-7: Toggle Analyst Status (Active/Suspended)
+# M-7: Toggle Analyst Status (Active ↔ Inactive)
 @app.route('/api/manager/analysts/<int:user_id>/toggle-status', methods=['POST'])
 def toggle_analyst_status(user_id):
     conn = get_db_connection()
@@ -749,7 +780,7 @@ def toggle_analyst_status(user_id):
         if not user:
             return jsonify({'message': 'Analyst not found'}), 404
             
-        new_status = 'Suspended' if user['account_status'] == 'Active' else 'Active'
+        new_status = 'Inactive' if user['account_status'] == 'Active' else 'Active'
         
         cursor.execute("UPDATE users SET account_status = %s WHERE user_id = %s", (new_status, user_id))
         conn.commit()
@@ -765,7 +796,37 @@ def toggle_analyst_status(user_id):
         conn.close()
 
 
-# M-6: Helper for Private IP Validation
+# M-8: Toggle Suspend (Active/Inactive → Suspended, or Suspended → Active)
+@app.route('/api/manager/analysts/<int:user_id>/toggle-suspend', methods=['POST'])
+def toggle_analyst_suspend(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT account_status FROM users WHERE user_id = %s AND role = 'Junior_Analyst'", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'message': 'Analyst not found'}), 404
+
+        # If currently Suspended → lift it back to Active
+        # Otherwise (Active or Inactive) → Suspend
+        new_status = 'Active' if user['account_status'] == 'Suspended' else 'Suspended'
+
+        cursor.execute("UPDATE users SET account_status = %s WHERE user_id = %s", (new_status, user_id))
+        conn.commit()
+
+        return jsonify({
+            'message': f'Analyst status updated to {new_status}',
+            'new_status': new_status
+        }), 200
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# M-9: Helper for Private IP Validation
 def is_private_ip(ip):
     try:
         parts = [int(p) for p in ip.split('.')]

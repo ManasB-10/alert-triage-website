@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
-import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings, UserCheck, UserX, Search } from 'lucide-react';
+import { User, Mail, Save, Loader2, Plus, UserPlus, Trash2, Eye, EyeOff, X, Activity, ShieldCheck, Key, Settings, UserCheck, UserX, Search, ShieldOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = 'http://localhost:5000';
@@ -45,6 +45,12 @@ const ManagerProfile = () => {
   // Delete analyst state
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  // Toggle status loading state
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  // Suspend loading state
+  const [suspendingId, setSuspendingId] = useState<number | null>(null);
 
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -273,6 +279,7 @@ const ManagerProfile = () => {
   };
 
   const handleToggleStatus = async (id: number) => {
+    setTogglingId(id);
     try {
       const res = await fetch(`${API}/api/manager/analysts/${id}/toggle-status`, {
         method: 'POST'
@@ -286,6 +293,28 @@ const ManagerProfile = () => {
       ));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Failed to update status');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const handleToggleSuspend = async (id: number) => {
+    setSuspendingId(id);
+    try {
+      const res = await fetch(`${API}/api/manager/analysts/${id}/toggle-suspend`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      toast.success(data.message);
+      setAnalysts(prev => prev.map(a =>
+        a.user_id === id ? { ...a, account_status: data.new_status } : a
+      ));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update suspension');
+    } finally {
+      setSuspendingId(null);
     }
   };
 
@@ -614,24 +643,45 @@ const ManagerProfile = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tight border ${analyst.account_status === 'Active'
-                              ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                              : 'bg-red-500/10 border-red-500/20 text-red-400'
-                              }`}>
-                              {analyst.account_status}
-                            </span>
+                            <button
+                              onClick={() => handleToggleStatus(analyst.user_id)}
+                              disabled={togglingId === analyst.user_id || analyst.account_status === 'Suspended'}
+                              title={
+                                analyst.account_status === 'Suspended'
+                                  ? 'Unsuspend first to change inactive status'
+                                  : analyst.account_status === 'Active'
+                                    ? 'Click to set Inactive'
+                                    : 'Click to set Active'
+                              }
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tight border transition-all hover:opacity-70 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                analyst.account_status === 'Active'
+                                  ? 'bg-green-500/10 border-green-500/20 text-green-400 hover:bg-green-500/20'
+                                  : analyst.account_status === 'Inactive'
+                                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+                                    : 'bg-red-500/10 border-red-500/20 text-red-400 cursor-not-allowed'
+                              }`}
+                            >
+                              {togglingId === analyst.user_id ? '...' : analyst.account_status}
+                            </button>
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              {/* Suspend / Unsuspend button */}
                               <button
-                                onClick={() => handleToggleStatus(analyst.user_id)}
-                                title={analyst.account_status === 'Active' ? 'Suspend Analyst' : 'Activate Analyst'}
-                                className={`p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 ${analyst.account_status === 'Active'
-                                  ? 'text-muted-foreground hover:bg-red-500/10 hover:text-red-400'
-                                  : 'text-green-400 hover:bg-green-500/10'
-                                  }`}
+                                onClick={() => handleToggleSuspend(analyst.user_id)}
+                                disabled={suspendingId === analyst.user_id}
+                                title={analyst.account_status === 'Suspended' ? 'Unsuspend Analyst' : 'Suspend Analyst'}
+                                className={`p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50 ${
+                                  analyst.account_status === 'Suspended'
+                                    ? 'text-green-400 hover:bg-green-500/10'
+                                    : 'text-muted-foreground hover:bg-red-500/10 hover:text-red-400'
+                                }`}
                               >
-                                {analyst.account_status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                                {suspendingId === analyst.user_id
+                                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                                  : analyst.account_status === 'Suspended'
+                                    ? <UserCheck className="w-4 h-4" />
+                                    : <ShieldOff className="w-4 h-4" />}
                               </button>
 
                               {confirmDeleteId === analyst.user_id ? (
